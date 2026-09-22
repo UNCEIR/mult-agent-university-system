@@ -189,3 +189,26 @@ async def test_business_subagents_are_mounted_instances():
         assert entry["runnable"] is fake.return_value
         assert spec.skills, f"{spec.name} skills empty（skill 必须实例挂载）"
         assert spec.allowed_tools, f"{spec.name} allowed_tools empty"
+
+@pytest.mark.asyncio
+async def test_factory_mounts_tool_hooks_with_summarization(factory_settings):
+    """A0 回归：后续构造 summarization 时不得覆盖已挂载的 ToolHooksMiddleware。"""
+    from agent.main.factory import build_deep_agent
+    from agent.main.specs import MAIN_AGENT_SPEC
+    from agent.middleware.tool_hooks import ToolHooksMiddleware
+    from agent.memory.summarization_sync import SummarizationSyncMiddleware
+
+    compiled_agent = MagicMock()
+    with (
+        patch("agent.main.factory.build_agent_backend", return_value=MagicMock()),
+        patch("agent.main.factory.build_checkpointer", new_callable=AsyncMock, return_value=MagicMock()),
+        patch("agent.main.factory.build_chat_openai", return_value=MagicMock()),
+        patch("agent.main.factory.create_deep_agent", return_value=compiled_agent) as create_agent,
+    ):
+        await build_deep_agent(MAIN_AGENT_SPEC, tools=[])
+
+    middleware = create_agent.call_args.kwargs["middleware"]
+    tool_hooks = [m for m in middleware if isinstance(m, ToolHooksMiddleware)]
+    summarization = [m for m in middleware if isinstance(m, SummarizationSyncMiddleware)]
+    assert len(tool_hooks) == 1
+    assert len(summarization) == 1

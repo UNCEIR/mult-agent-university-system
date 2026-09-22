@@ -30,6 +30,7 @@
 | `compute_weighted_grade` | `stub` | 2 | `report/*` | `tools/report/compute_weighted_grade.py` |
 | `parse_document` | `implemented` | 1 | `documents/*` | `tools/documents/parser.py` |
 | `chunk_document` | `implemented` | 1 | `documents/*` | `tools/documents/chunker.py` |
+| `adaptive_knowledge_retrieve` | `implemented` | 4 | `knowledge/*` | `tools/knowledge/adaptive_retrieve.py`（LLM planner + dense/lexical + RRF + fragment rerank，主 Agent 唯一高层 RAG 入口） |
 | `query_handbook` | `implemented` | 1 | `knowledge/*` | `tools/knowledge/query_handbook.py`（手册检索，user_id=public 分区，top_k 默认 5） |
 | `query_transcript` | `implemented` | 1 | `knowledge/*` | `tools/knowledge/query_transcript.py`（个人成绩单，仅本人 user_id 分区，top_k 默认 3，强权限隔离） |
 | `desensitize_transcript` | `implemented` | 1 | `documents/*` | `tools/documents/desensitizer.py` |

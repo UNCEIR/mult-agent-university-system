@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-21",
+  "set": "kb_retrieval",
+  "mode": "smoke",
+  "judge": false,
+  "judge_metrics": null,
+  "metrics": {
+    "total": 2,
+    "passed": 2,
+    "pass_rate": 1.0,
+    "latency_p50": null,
+    "latency_p95": null,
+    "ttft_p50": null,
+    "api_latency_p50": null,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": 1.0,
+    "context_precision_avg": 1.0,
+    "ndcg_at_k_avg": null,
+    "f1_at_k_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 2,
+        "passed": 2
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "kb_01",
+      "type": "kb_retrieval",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {
+        "context_recall": 1.0,
+        "context_precision": 1.0
+      },
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "kb_02",
+      "type": "kb_retrieval",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {
+        "context_recall": 1.0,
+        "context_precision": 1.0
+      },
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    }
+  ],
+  "judge_results": null
+}

@@ -57,6 +57,7 @@ async def _embed_search_chunks(
 
 async def _assemble_matches(
     hits: list[dict[str, Any]],
+    content_limit: int = 800,
 ) -> list[dict[str, Any]]:
     """把 hit 元信息 + MySQL `document_chunks` 的 content 装配成 LLM 可见的 match dict。
 
@@ -88,7 +89,7 @@ async def _assemble_matches(
                 "section": hit.get("section", ""),
                 "user_scope": "public" if hit.get("user_id", "") == PUBLIC_USER else "personal",
                 "score": round(float(1.0 - hit.get("distance", 1.0)), 4),
-                "content": content[:800],
+                "content": content[:content_limit],
             }
         )
     return matches

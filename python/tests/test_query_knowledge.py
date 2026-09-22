@@ -235,13 +235,14 @@ async def test_query_transcript_repo_unavailable_returns_error():
 
 # ── 端点注册（保证 SPEC 同步 + ToolRegistry 同步） ──────────────────────
 
-def test_main_agent_spec_includes_split_tools():
-    """MAIN_AGENT_SPEC.allowed_tools 必须含 query_handbook + query_transcript，不再含 query_knowledge。"""
+def test_main_agent_spec_includes_adaptive_rag_tool():
+    """主 Agent 暴露高层 adaptive_knowledge_retrieve，旧底层工具不再直接暴露。"""
     from agent.main.specs import MAIN_AGENT_SPEC
 
     allowed = set(MAIN_AGENT_SPEC.allowed_tools)
-    assert "query_handbook" in allowed
-    assert "query_transcript" in allowed
+    assert "adaptive_knowledge_retrieve" in allowed
+    assert "query_handbook" not in allowed
+    assert "query_transcript" not in allowed
     assert "query_knowledge" not in allowed
 
 
@@ -250,6 +251,7 @@ def test_runtime_imports_split_tools():
     from agent import runtime
 
     src = open(runtime.__file__, encoding="utf-8").read()
+    assert "adaptive_knowledge_retrieve" in src
     assert "query_handbook" in src
     assert "query_transcript" in src
     assert "query_knowledge" not in src

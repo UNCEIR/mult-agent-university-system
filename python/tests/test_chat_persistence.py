@@ -61,6 +61,52 @@ async def test_chat_persists_turn_and_injects_memory():
     assert input_msgs[0]["content"].startswith("用户长期记忆")
 
 
+@pytest.mark.api
+async def test_chat_injects_image_ids_without_paths_or_base64():
+    """图片附件注入主 Agent 的只有 image_id 元数据，不暴露本地路径/base64。"""
+    from fastapi.testclient import TestClient
+
+    from agent.app import app
+
+    class _ImageService:
+        async def resolve_many(self, image_ids, *, user_id, session_id=None):
+            assert image_ids == ["img_abc123456789012345"]
+            assert user_id == "u-img"
+            assert session_id == "s-img"
+            return [
+                {
+                    "image_id": "img_abc123456789012345",
+                    "mime_type": "image/png",
+                    "width": 320,
+                    "height": 200,
+                }
+            ]
+
+    agent = MagicMock()
+    agent.ainvoke = AsyncMock(return_value={"messages": [MagicMock(content="已收到图片")]})
+    with (
+        patch("agent.runtime.main_agent", agent),
+        patch("agent.runtime.chat_session_repo", None),
+        patch("agent.runtime.image_asset_service", _ImageService()),
+    ):
+        client = TestClient(app)
+        resp = client.post(
+            "/api/v1/chat",
+            json={
+                "message": "看看图片",
+                "session_id": "s-img",
+                "user_id": "u-img",
+                "image_ids": ["img_abc123456789012345"],
+            },
+        )
+
+    assert resp.status_code == 200
+    input_msgs = agent.ainvoke.call_args.args[0]["messages"]
+    attachment_context = "\n".join(msg["content"] for msg in input_msgs[:-1])
+    assert "img_abc123456789012345" in attachment_context
+    assert "data:image" not in attachment_context
+    assert ".documents" not in attachment_context
+
 class _NoopLock:
     async def __aenter__(self):
         return self

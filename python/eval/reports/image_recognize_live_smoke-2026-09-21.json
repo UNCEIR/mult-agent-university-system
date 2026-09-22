@@ -1,0 +1,74 @@
+{
+  "date": "2026-09-21",
+  "set": "image_recognize_live_smoke",
+  "mode": "live",
+  "judge": false,
+  "judge_metrics": null,
+  "metrics": {
+    "total": 3,
+    "passed": 3,
+    "pass_rate": 1.0,
+    "latency_p50": 12463.4,
+    "latency_p95": 25756.0,
+    "ttft_p50": null,
+    "api_latency_p50": null,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "ndcg_at_k_avg": null,
+    "f1_at_k_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 1,
+        "passed": 1
+      },
+      "medium": {
+        "total": 2,
+        "passed": 2
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "img_live_01",
+      "type": "image_recognize",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 25756.0,
+      "mode": "live",
+      "usage": {},
+      "detail": "kind= source=0 err=False"
+    },
+    {
+      "case_id": "img_live_02",
+      "type": "image_recognize",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 12463.4,
+      "mode": "live",
+      "usage": {},
+      "detail": "kind=ocr source=1 err=False"
+    },
+    {
+      "case_id": "img_live_03",
+      "type": "image_recognize",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 3305.8,
+      "mode": "live",
+      "usage": {},
+      "detail": "kind=chart source=1 err=False"
+    }
+  ],
+  "judge_results": null
+}

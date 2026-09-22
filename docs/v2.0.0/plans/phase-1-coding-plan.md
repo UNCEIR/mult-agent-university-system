@@ -49,7 +49,7 @@ Phase 1 编码阶段包含两个主要工作流：
 POST /api/v1/chat
   → runtime.main_agent.ainvoke()
     → create_deep_agent(
-        model=ChatOpenAI(中转站 qwen3.8-flash),
+        model=ChatOpenAI(中转站 deepseek-v4.1-flash),
         tools=ToolRegistry.get_all(),
         backend=CompositeBackend(StateBackend + FilesystemBackend×2),
         skills=["/skills/"],         # SkillsMiddleware 自动加载

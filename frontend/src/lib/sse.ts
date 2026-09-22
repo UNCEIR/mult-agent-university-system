@@ -78,8 +78,23 @@ export async function* consumeSSEWithRetry(
         const err = await res.json().catch(() => ({ detail: res.statusText }))
         throw new Error(err.detail || `HTTP ${res.status}`)
       }
+      // 仅在本次连接内去重。跨连接时服务端按 Last-Event-ID 回放，
+      // 不能在客户端跨连接强去重，否则 Redis 降级导致 ID 重置时会误丢新事件。
+      let connectionConsumedNumericId: number | undefined
       for await (const evt of parseSseStream(res.body!, signal)) {
-        if (evt.id) lastEventId = evt.id
+        if (evt.id) {
+          const numericId = Number(evt.id)
+          if (Number.isFinite(numericId)) {
+            if (
+              connectionConsumedNumericId !== undefined &&
+              numericId <= connectionConsumedNumericId
+            ) {
+              continue
+            }
+            connectionConsumedNumericId = numericId
+          }
+          lastEventId = evt.id
+        }
         yield evt
       }
       // 流正常结束 → 直接退出（不重试）

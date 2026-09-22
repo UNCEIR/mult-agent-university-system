@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import structlog
@@ -14,6 +15,30 @@ from sqlalchemy import text
 from .base import MySQLRepository
 
 logger = structlog.get_logger()
+
+
+def _lexical_tokens(query: str) -> list[str]:
+    """把中文长查询拆成 2-gram/关键词，用于 FTS 无命中时的 LIKE 兜底。"""
+    normalized = re.sub(r"\s+", " ", query.strip())
+    if not normalized:
+        return []
+    tokens: list[str] = []
+    for part in re.split(r"[\s,，。；;:：/\\|()（）\[\]【】]+", normalized):
+        if len(part) >= 2:
+            tokens.append(part[:24])
+    compact = "".join(ch for ch in normalized if ch.isalnum())
+    if len(compact) >= 2:
+        tokens.extend(compact[idx : idx + 2] for idx in range(0, min(len(compact) - 1, 10)))
+    seen: set[str] = set()
+    out: list[str] = []
+    for token in tokens:
+        if len(token) >= 2 and token not in seen:
+            seen.add(token)
+            out.append(token)
+        if len(out) >= 8:
+            break
+    return out
+
 
 
 class DocumentRepository(MySQLRepository):
@@ -185,6 +210,74 @@ class DocumentRepository(MySQLRepository):
         with self._engine.connect() as conn:
             rows = conn.execute(sql, params).mappings().all()
         return [dict(row) for row in rows]
+
+    def search_lexical(
+        self,
+        query: str,
+        user_ids: list[str],
+        top_k: int = 20,
+    ) -> list[dict[str, Any]]:
+        """MySQL ngram FULLTEXT lexical 召回；FTS 无命中/不可用时退化为 token LIKE。"""
+        if not query.strip() or not user_ids or not self.ping():
+            return []
+        assert self._engine is not None
+        allowed = ", ".join(f":u_{idx}" for idx in range(len(user_ids)))
+        limit = max(1, min(int(top_k), 50))
+        base_params: dict[str, Any] = {"top_k": limit}
+        base_params.update({f"u_{idx}": uid for idx, uid in enumerate(user_ids)})
+        rows = []
+        fts_params = dict(base_params)
+        fts_params["query"] = query.strip()[:200]
+        fts_sql = text(
+            f"""SELECT c.chunk_id, c.dataset_id, r.source_doc_name, c.page_number,
+                       r.user_id,
+                       MATCH(c.content) AGAINST (:query IN NATURAL LANGUAGE MODE) AS lexical_score
+                FROM document_chunks c
+                JOIN document_records r ON r.dataset_id = c.dataset_id
+                WHERE r.user_id IN ({allowed})
+                  AND MATCH(c.content) AGAINST (:query IN NATURAL LANGUAGE MODE)
+                ORDER BY lexical_score DESC
+                LIMIT :top_k"""
+        )
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(fts_sql, fts_params).mappings().all()
+        except Exception:  # noqa: BLE001
+            rows = []
+
+        if not rows:
+            tokens = _lexical_tokens(query)
+            if tokens:
+                like_clauses = []
+                like_params = dict(base_params)
+                for idx, token in enumerate(tokens):
+                    key = f"token_{idx}"
+                    like_clauses.append(f"c.content LIKE :{key}")
+                    like_params[key] = f"%{token}%"
+                like_sql = text(
+                    f"""SELECT c.chunk_id, c.dataset_id, r.source_doc_name, c.page_number,
+                               r.user_id, 1.0 AS lexical_score
+                        FROM document_chunks c
+                        JOIN document_records r ON r.dataset_id = c.dataset_id
+                        WHERE r.user_id IN ({allowed})
+                          AND ({' OR '.join(like_clauses)})
+                        ORDER BY c.page_number ASC
+                        LIMIT :top_k"""
+                )
+                with self._engine.connect() as conn:
+                    rows = conn.execute(like_sql, like_params).mappings().all()
+        return [
+            {
+                "chunk_id": str(row["chunk_id"]),
+                "dataset_id": str(row["dataset_id"] or ""),
+                "source_doc_name": str(row["source_doc_name"] or ""),
+                "page_number": int(row["page_number"] or 0),
+                "section": "",
+                "user_id": str(row["user_id"] or ""),
+                "lexical_score": float(row["lexical_score"] or 0.0),
+            }
+            for row in rows
+        ]
 
     def get_chunk_contents(self, chunk_ids: list[str]) -> dict[str, dict[str, Any]]:
         """按 chunk_id 批量取回内容（供 query_knowledge 组装回答上下文）。

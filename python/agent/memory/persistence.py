@@ -59,6 +59,7 @@ async def persist_turn(
     user_id: str,
     user_msg: str,
     assistant_msgs: list | None = None,
+    user_attachments: list | None = None,
     usage_metadata: dict | str | None = None,
 ) -> None:
     """把一轮对话落库（user + assistant 逐条；匿名 user 跳过）。
@@ -73,7 +74,22 @@ async def persist_turn(
     try:
         lock = repo.session_lock(session_id)
         async with lock:
-            repo.append_message(session_id, user_id, "user", user_msg)
+            attachments_json = None
+            if user_attachments:
+                try:
+                    attachments_json = json.dumps(user_attachments, ensure_ascii=False)
+                except (TypeError, ValueError):  # noqa: BLE001
+                    attachments_json = None
+            if attachments_json:
+                repo.append_message(
+                    session_id,
+                    user_id,
+                    "user",
+                    user_msg,
+                    attachments_json=attachments_json,
+                )
+            else:
+                repo.append_message(session_id, user_id, "user", user_msg)
             for msg in assistant_msgs or []:
                 role = "assistant"
                 tool_calls = _tool_calls_of(msg)

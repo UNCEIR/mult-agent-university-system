@@ -50,8 +50,7 @@ class TestPromptContent:
         assert 'dispatch_module' in MAIN_AGENT_SYSTEM_PROMPT
         # 2026-08-25 重构：query_knowledge 已拆成 query_handbook / query_transcript
         # 这里断言新工具名都出现 + 关键的反退路由指令
-        assert 'query_handbook' in MAIN_AGENT_SYSTEM_PROMPT
-        assert 'query_transcript' in MAIN_AGENT_SYSTEM_PROMPT
+        assert 'adaptive_knowledge_retrieve' in MAIN_AGENT_SYSTEM_PROMPT
         # 明确禁止规则：禁止把"成绩单/评语/寄语/期末报告"当作知识库问答
         assert '禁止' in MAIN_AGENT_SYSTEM_PROMPT or '不要' in MAIN_AGENT_SYSTEM_PROMPT
 
@@ -66,7 +65,7 @@ class TestPromptContent:
         for kw in keywords:
             assert kw in MAIN_AGENT_SYSTEM_PROMPT, (
                 f'prompt 缺失关键词 "{kw}"（模块={module}）；'
-                f'LLM 会退回到 query_handbook/query_transcript，导致 chat_intent 端测失败'
+                f'LLM 会绕过 adaptive_knowledge_retrieve，导致 chat_intent 端测失败'
             )
 
     @pytest.mark.parametrize('module', list(INTENT_MODULES))
@@ -84,10 +83,10 @@ class TestPromptContent:
 
         # 手册类工具
         assert '学生手册' in MAIN_AGENT_SYSTEM_PROMPT
-        assert 'query_handbook' in MAIN_AGENT_SYSTEM_PROMPT
+        assert 'adaptive_knowledge_retrieve' in MAIN_AGENT_SYSTEM_PROMPT
         # 个人类工具
         assert '个人成绩单' in MAIN_AGENT_SYSTEM_PROMPT or '本人' in MAIN_AGENT_SYSTEM_PROMPT
-        assert 'query_transcript' in MAIN_AGENT_SYSTEM_PROMPT
+        
 
     def test_prompt_includes_recommend_courses_one_click_tool(self):
         """核心能力 5：课程推荐 → 必须用 recommend_courses 一键工具（不要分步调原子）。"""
@@ -108,6 +107,15 @@ class TestPromptContent:
         from agent.main.prompt import MAIN_AGENT_SYSTEM_PROMPT
 
         assert '中文' in MAIN_AGENT_SYSTEM_PROMPT
+
+    def test_prompt_includes_partial_success_tool_failure_policy(self):
+        """工具失败时继续独立任务，并生成部分成功回答。"""
+        from agent.main.prompt import MAIN_AGENT_SYSTEM_PROMPT
+
+        assert 'isError=true' in MAIN_AGENT_SYSTEM_PROMPT
+        assert '互不依赖' in MAIN_AGENT_SYSTEM_PROMPT
+        assert '部分' in MAIN_AGENT_SYSTEM_PROMPT
+        assert '冒充' in MAIN_AGENT_SYSTEM_PROMPT
 
 
 class TestMainAgentSpec:

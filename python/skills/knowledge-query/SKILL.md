@@ -1,12 +1,12 @@
 ---
 name: knowledge-query
 description: 基于知识库（学生手册 + 个人成绩单）回答学生关于大学校园生活、规章制度和个人学业的问题。当用户查询学校制度、管理规定、个人学业成绩时使用。 何时不用：需要实时新闻/外部资料时请用 web-search；本技能只查内部知识库（手册+个人成绩单）。
-allowed_tools: [query_handbook, query_transcript]
+allowed_tools: [adaptive_knowledge_retrieve]
 ---
 
 ## Description
 
-知识库问答：学校规章（public 分区，`query_handbook`，默认 top_k=5）+ 本人成绩单（user 分区，`query_transcript`，默认 top_k=3）→ 按问题域分发到对应工具 → 引用来源作答。
+知识库问答：主 Agent 调用 `adaptive_knowledge_retrieve`，由检索控制器在授权范围内完成选库、query 改写、dense+lexical 混合召回、RRF 与片段筛选；最终按 evidence/citations 引用来源作答。旧 `query_handbook/query_transcript` 仅保留内部兼容。
 
 > 2026-08-25：v0.9 重构把原 `query_knowledge`（一个工具 + 混合 user_ids）拆成 `query_handbook` 与 `query_transcript`。两类不同问题（公开 vs 个人）不应共用 top_k 候选集，否则会污染精度 + 模糊权限边界。详见 `docs/v2.0.0/notes/2026-08-25-knowledge-tools-split.md`。
 

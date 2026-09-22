@@ -5,7 +5,15 @@
 > 2026-08-25：v0.9 把 query_knowledge 拆成 query_handbook / query_transcript 两个工具。
 > 按问题域分发，不要混调。
 
-## query_handbook（学生手册 / 公开）
+## adaptive_knowledge_retrieve（推荐）
+
+```json
+{"question": "转专业流程和申请时间是什么？"}
+```
+
+> 工具会按当前用户身份自动限制 handbook/transcript 范围并返回 evidence/citations。
+
+## query_handbook（仅内部兼容）
 
 ```json
 {"query": "转专业流程", "top_k": 5}

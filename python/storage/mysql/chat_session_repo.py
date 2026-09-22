@@ -33,12 +33,26 @@ class ChatSessionRepository(MySQLRepository):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._locks: dict[str, asyncio.Lock] = {}
+        self._attachments_column: bool | None = None
 
     def session_lock(self, session_id: str) -> asyncio.Lock:
         """per-session 并发锁（seq 分配与提取水位串行）。"""
         if session_id not in self._locks:
             self._locks[session_id] = asyncio.Lock()
         return self._locks[session_id]
+
+    def _has_attachments_column(self) -> bool:
+        """兼容旧库：attachments_json 未迁移时不阻断会话读写。"""
+        if self._attachments_column is not None:
+            return self._attachments_column
+        assert self._engine is not None
+        try:
+            with self._engine.connect() as conn:
+                conn.execute(text("SELECT attachments_json FROM chat_messages LIMIT 0"))
+            self._attachments_column = True
+        except Exception:  # noqa: BLE001
+            self._attachments_column = False
+        return self._attachments_column
 
     # ── chat_sessions ─────────────────────────────────────────────────
     def get_or_create_session(self, session_id: str, user_id: str) -> dict:
@@ -63,7 +77,7 @@ class ChatSessionRepository(MySQLRepository):
             )
         return {"session_id": session_id, "user_id": user_id, "message_count": 0, "last_extracted_seq": 0}
 
-    def append_message(self, session_id: str, user_id: str, role: str, content: str, tool_calls_json=None, usage_json=None) -> int:
+    def append_message(self, session_id: str, user_id: str, role: str, content: str, tool_calls_json=None, attachments_json=None, usage_json=None) -> int:
         """追加消息：事务内原子自增分配 seq + message_count。返回 seq。"""
         if not self.ping():
             return -1
@@ -78,21 +92,39 @@ class ChatSessionRepository(MySQLRepository):
                 {"sid": session_id},
             ).mappings().first()
             seq = int(row["message_count"]) + 1 if row else 1
-            conn.execute(
-                text(
-                    "INSERT INTO chat_messages (session_id, user_id, seq, role, content, tool_calls_json, usage_json) "
-                    "VALUES (:sid, :uid, :seq, :role, :content, :tool_calls, :usage)"
-                ),
-                {
-                    "sid": session_id,
-                    "uid": user_id,
-                    "seq": seq,
-                    "role": role,
-                    "content": content,
-                    "tool_calls": tool_calls_json,
-                    "usage": usage_json,
-                },
-            )
+            if self._has_attachments_column():
+                conn.execute(
+                    text(
+                        "INSERT INTO chat_messages (session_id, user_id, seq, role, content, tool_calls_json, attachments_json, usage_json) "
+                        "VALUES (:sid, :uid, :seq, :role, :content, :tool_calls, :attachments, :usage)"
+                    ),
+                    {
+                        "sid": session_id,
+                        "uid": user_id,
+                        "seq": seq,
+                        "role": role,
+                        "content": content,
+                        "tool_calls": tool_calls_json,
+                        "attachments": attachments_json,
+                        "usage": usage_json,
+                    },
+                )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO chat_messages (session_id, user_id, seq, role, content, tool_calls_json, usage_json) "
+                        "VALUES (:sid, :uid, :seq, :role, :content, :tool_calls, :usage)"
+                    ),
+                    {
+                        "sid": session_id,
+                        "uid": user_id,
+                        "seq": seq,
+                        "role": role,
+                        "content": content,
+                        "tool_calls": tool_calls_json,
+                        "usage": usage_json,
+                    },
+                )
             conn.execute(
                 text("UPDATE chat_sessions SET message_count = :cnt WHERE session_id = :sid"),
                 {"cnt": seq, "sid": session_id},
@@ -103,13 +135,19 @@ class ChatSessionRepository(MySQLRepository):
         if not self.ping():
             return []
         assert self._engine is not None
+        columns = "seq, role, content, tool_calls_json, attachments_json" if self._has_attachments_column() else "seq, role, content, tool_calls_json"
         sql = text(
-            "SELECT seq, role, content, tool_calls_json FROM chat_messages "
+            f"SELECT {columns} FROM chat_messages "
             "WHERE session_id = :sid AND seq > :after ORDER BY seq LIMIT :limit"
         )
         with self._engine.connect() as conn:
             rows = conn.execute(sql, {"sid": session_id, "after": after_seq, "limit": limit}).mappings().all()
-        return [dict(r) for r in rows]
+        result = []
+        for row in rows:
+            item = dict(row)
+            item.setdefault("attachments_json", None)
+            result.append(item)
+        return result
 
     def list_sessions_by_user(self, user_id: str, limit: int = 100) -> list[dict]:
         """按用户列会话（active），title 为空时取该会话首条 user 消息作显示名。"""

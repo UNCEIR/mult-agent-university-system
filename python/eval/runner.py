@@ -229,6 +229,16 @@ def _execute_live_case(case: dict, t0: float) -> dict:
             "usage": {},
             "detail": f"hits={len(output.get('hit_chunk_ids', []))}",
         }
+    if case["type"] == "rag_agentic":
+        output = _live_rag_agentic(case["input"])
+        ok, failures = run_assertions(case, output)
+        return {
+            "case_id": case["case_id"], "type": case["type"], "difficulty": case.get("difficulty", ""),
+            "pass": ok, "failures": failures, "metrics": {},
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "mode": "live",
+            "usage": {},
+            "detail": f"status={output.get('status', '')} evidence={output.get('evidence_count', 0)} planner={output.get('planner_source', '')}",
+        }
     if case["type"] == "web_search":
         output = _live_web_search(case["input"]["query"], case["input"].get("max_results", 3))
         ok, failures = run_assertions(case, output)
@@ -238,6 +248,16 @@ def _execute_live_case(case: dict, t0: float) -> dict:
             "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "mode": "live",
             "usage": {},
             "detail": f"results={len(output.get('results', []))} src={output.get('source', '')}",
+        }
+    if case["type"] == "image_recognize":
+        output = _live_image_recognize(case["input"])
+        ok, failures = run_assertions(case, output)
+        return {
+            "case_id": case["case_id"], "type": case["type"], "difficulty": case.get("difficulty", ""),
+            "pass": ok, "failures": failures, "metrics": {},
+            "latency_ms": round((time.perf_counter() - t0) * 1000, 1), "mode": "live",
+            "usage": {},
+            "detail": f"kind={output.get('kind', '')} source={len(output.get('source_images', []))} err={bool(output.get('isError'))}",
         }
     if case["type"] == "image_generate":
         output = _live_image_generate(case["input"])
@@ -381,6 +401,106 @@ def _live_kb(query: str, top_k: int) -> dict:
     except _json.JSONDecodeError:
         ids = re.findall(r"chunk_id[=:]\s*[\"']?([\w:]+)", text)
     return {"hit_chunk_ids": ids, "ranked": ranked}
+
+
+def _live_image_recognize(inputs: dict) -> dict:
+    """真实图片链路：本地图片/图库 → 私有资产 → image_recognize → qwen3-vl-plus。"""
+    import asyncio
+    import json
+    import os
+    from io import BytesIO
+    from pathlib import Path
+
+    from fastapi import UploadFile
+    from agent.main.context import user_context
+
+    repo_root = Path(__file__).resolve().parents[2]
+    image_path = str(inputs.get("image_path", "") or "").strip()
+    search_dir = os.getenv("VISION_LIVE_IMAGE_DIR", "").strip()
+    if not image_path and search_dir:
+        directory = Path(search_dir)
+        if directory.is_dir():
+            candidates = sorted(
+                p for p in directory.iterdir()
+                if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
+            )
+            if candidates:
+                image_path = str(candidates[0])
+    if not image_path:
+        image_path = str(repo_root / "docs" / "v2.0.0" / "image.png")
+    path = Path(image_path)
+    if not path.is_absolute():
+        path = repo_root / path
+    if not path.is_file():
+        return {"isError": True, "code": "IMAGE_NOT_FOUND", "message": f"live image not found: {path}"}
+
+    from agent.images.service import ImageAssetService
+    from tools.image.image_recognize import image_recognize
+    from agent import runtime
+
+    async def _run() -> dict:
+        user_id = str(inputs.get("user_id", "eval-vision"))
+        session_id = str(inputs.get("session_id", "eval-vision"))
+        service = ImageAssetService(metadata_repo=None, minio_repo=None)
+        upload = UploadFile(
+            filename=path.name,
+            file=BytesIO(path.read_bytes()),
+            headers={"content-type": "application/octet-stream"},
+        )
+        assets = await service.ingest_many([upload], user_id=user_id, session_id=session_id)
+        old_service = getattr(runtime, "image_asset_service", None)
+        runtime.image_asset_service = service
+        try:
+            with user_context(user_id):
+                raw = await image_recognize.ainvoke(
+                    {
+                        "image_ids": [assets[0]["image_id"]],
+                        "question": str(inputs.get("question", "")),
+                        "mode": str(inputs.get("mode", "auto")),
+                    }
+                )
+        finally:
+            runtime.image_asset_service = old_service
+            await service.delete(assets[0]["image_id"], user_id=user_id, session_id=session_id)
+        try:
+            data = json.loads(str(raw))
+            return data if isinstance(data, dict) else {"result": str(raw), "isError": False}
+        except json.JSONDecodeError:
+            return {"result": str(raw), "isError": False}
+
+    return asyncio.run(_run())
+
+
+def _live_rag_agentic(inputs: dict) -> dict:
+    """真实 adaptive_knowledge_retrieve：planner + hybrid RRF + rerank。"""
+    import asyncio
+    import json
+
+    from agent import runtime
+    from agent.main.context import user_context
+    from tools.knowledge.adaptive_retrieve import adaptive_knowledge_retrieve
+
+    async def _run() -> dict:
+        if runtime.document_vector_repo is None:
+            await runtime.init()
+        user_id = str(inputs.get("user_id", ""))
+        with user_context(user_id):
+            raw = await adaptive_knowledge_retrieve.ainvoke(
+                {
+                    "question": str(inputs.get("question", "")),
+                    "requested_kbs": list(inputs.get("requested_kbs", []) or []),
+                    "max_rounds": int(inputs.get("max_rounds", 1)),
+                }
+            )
+        data = json.loads(str(raw))
+        evidence = data.get("evidence", []) or []
+        data["evidence_count"] = len(evidence)
+        data["citation_count"] = len(data.get("citations", []) or [])
+        data["planner_source"] = (data.get("trace") or {}).get("planner", "")
+        data["hit_chunk_ids"] = [str(item.get("chunk_id", "")) for item in evidence if item.get("chunk_id")]
+        return data
+
+    return asyncio.run(_run())
 
 
 def _live_web_search(query: str, max_results: int) -> dict:

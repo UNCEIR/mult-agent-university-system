@@ -2,7 +2,7 @@
 """图片工具 — 识别（image_recognize，视觉直连）+ 生成（即梦 4.0 两段式）。
 
 Phase 4（E1）实装：
-- image_recognize：URL/data URL/本地路径 → qwen3-vl-plus 结构化识别（chart/series/trend + source_image 可溯源）
+- image_recognize：私有 image_id → qwen3-vl-plus 识别（仅 owner 可读；chart/table/ocr 可溯源）
 - image_generate / image_generate_get：即梦 4.0 两段式（提交 → 轮询 → 转存 MinIO/本地）
 """
 

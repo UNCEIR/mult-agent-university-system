@@ -6,6 +6,7 @@ ToolRegistry 在 build_main_agent 之前初始化，确保主 agent 能从注册
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -40,6 +41,7 @@ report_artifact_repo: Any = None
 report_upload_repo: Any = None
 evaluation_repo: Any = None
 chat_session_repo: Any = None
+image_asset_service: Any = None
 
 
 async def init() -> None:
@@ -48,8 +50,7 @@ async def init() -> None:
     global mysql_repo, redis_repo, course_vector_repo
     global main_agent, tool_registry
     global document_vector_repo, document_repo
-    global minio_repo, report_artifact_repo, report_upload_repo, evaluation_repo, chat_session_repo
-
+    global minio_repo, report_artifact_repo, report_upload_repo, evaluation_repo, chat_session_repo, image_asset_service
     from ai.embedding_client import build_embedding_client
     from ai.llm_task_name import LLMTaskName
     from storage.milvus.course_vector_repo import CourseVectorRepository
@@ -95,10 +96,32 @@ async def init() -> None:
 
     evaluation_repo = EvaluationRepository()
     chat_session_repo = ChatSessionRepository()
+    # 2026-09-21：私有聊天图片资产（独立 bucket/local fallback + MySQL 元数据 sidecar fallback）
+    from agent.images.service import configure_image_asset_service
+    from storage.mysql.chat_attachment_repo import ChatAttachmentRepository
+
+    _chat_image_root = Path(__file__).resolve().parent.parent / ".documents" / "chat_images"
+    _chat_minio = MinioRepository(
+        endpoint=_s.minio_endpoint,
+        port=_s.minio_port,
+        access_key=_s.minio_access_key,
+        secret_key=_s.minio_secret_key,
+        secure=_s.minio_secure,
+        bucket=_s.minio_chat_bucket,
+        connect_timeout=_s.minio_connect_timeout,
+        local_root=_chat_image_root / "objects",
+    )
+    image_asset_service = configure_image_asset_service(
+        metadata_repo=ChatAttachmentRepository(),
+        minio_repo=_chat_minio,
+        fallback_root=_chat_image_root,
+        ttl_days=_s.vision_ttl_days,
+    )
 
     # ── v2.0.0 ToolRegistry（必须在 build_main_agent 之前初始化） ─────
     from tools import (
         ToolRegistry,
+        adaptive_knowledge_retrieve,
         check_feasibility,
         code_interpreter,
         compute_weighted_grade,
@@ -147,6 +170,7 @@ async def init() -> None:
         code_interpreter,
         mindmap_generator,
         compute_weighted_grade,
+        adaptive_knowledge_retrieve,
         query_handbook,
         query_transcript,
         inspect_score_excels,

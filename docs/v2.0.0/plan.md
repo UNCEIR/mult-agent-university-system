@@ -169,7 +169,7 @@
 
 > 兑现 phase-3-extensions.md 第 58 行"未来承诺"：上游资源到位后严格跑真实端测。范围只覆盖涉及 Phase 3 改动（新实装工具 / 记忆改造）的 eval 集，未改动的 `image_generate` / `web_search` 等不纳入。
 >
-> **入口切换**：原 `qwen3.5-flash` 算力余额不足，已切换至 `qwen3.8-flash`；docker 镜像 `--build-arg PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim` 重建（registry-1.docker.io 不可达，改用 DaoCloud 镜像源，缓存复用 5/6 层）。
+> **入口切换**：原 `qwen3.5-flash` 算力余额不足，已切换至 `deepseek-v4.1-flash`；docker 镜像 `--build-arg PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim` 重建（registry-1.docker.io 不可达，改用 DaoCloud 镜像源，缓存复用 5/6 层）。
 >
 > **结果**：
 >

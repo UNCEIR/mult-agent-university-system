@@ -31,6 +31,7 @@ weasyprint>=60.0  # 决策5/7: 报告 PDF 渲染（每学生独有 PDF 链接，
 python-docx>=1.1.0  # 决策6b: doc 文件解析兜底（报告输出已改 PDF，docxtpl Word 作废）
 pypdf>=4.0.0  # 决策6b: PDF 文件解析兜底（FastGPT KB 不可用/特定格式时）
 pymupdf>=1.24.0  # RAG: PDF 表格/复杂版式解析兜底（pypdf 失败时）
+Pillow>=10.0.0  # 聊天图片格式校验/EXIF 清理/尺寸归一化（PNG/JPEG/WebP/GIF/BMP）
 tavily-python>=0.3.0  # 决策7: 网页搜索 skill
 volcengine  # Phase 2: 即梦 4.0（火山引擎）图像生成 SDK（自建 MCP server 签名/提交/轮询）
 e2b>=2.37  # Phase 2: E2B 云沙箱代码执行（AsyncSandbox，自建 stdio MCP server 内核）

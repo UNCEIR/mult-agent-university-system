@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import AgentActivityTimeline from '@/components/AgentActivityTimeline'
 
-// Phase 4 E4：think→act→observe 三阶段（chat 消费链）——act=start，observe=end+result
+// Chat 工具过程只展示用户可读状态，不泄露内部函数名和原始结果。
 
 describe('AgentActivityTimeline', () => {
   it('renders nothing when no tools', () => {
@@ -10,24 +10,41 @@ describe('AgentActivityTimeline', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders act for start and observe+result for end', () => {
-    render(
+  it('renders friendly Chinese status without internal names or raw results', () => {
+    const { container } = render(
+      <AgentActivityTimeline tools={[{ name: 'image_recognize', status: 'end', ok: true }]} />,
+    )
+    expect(screen.getByText('图片识别')).toBeDefined()
+    expect(screen.getByText('已完成')).toBeDefined()
+    expect(container.textContent).not.toContain('image_recognize')
+    expect(container.textContent).not.toContain('observe')
+    expect(container.textContent).not.toContain('{')
+  })
+
+  it('renders an in-progress friendly label', () => {
+    const { container } = render(
+      <AgentActivityTimeline tools={[{ name: 'adaptive_knowledge_retrieve', status: 'start' }]} />,
+    )
+    expect(screen.getByText('正在检索知识库')).toBeDefined()
+    expect(container.textContent).not.toContain('adaptive_knowledge_retrieve')
+    expect(container.textContent).not.toContain('act')
+  })
+
+  it('renders a friendly failure message without the internal code', () => {
+    const { container } = render(
       <AgentActivityTimeline
         tools={[
-          { name: 'query_handbook', status: 'start' },
-          { name: 'query_handbook', status: 'end', result: '命中奖学金章节' },
+          {
+            name: 'image_recognize',
+            status: 'end',
+            ok: false,
+            code: 'TOOL_TIMEOUT',
+            message: '图片识别超时',
+          },
         ]}
       />,
     )
-    expect(screen.getAllByText('query_handbook').length).toBeGreaterThan(0)
-    expect(screen.getByText('act')).toBeDefined()
-    expect(screen.getByText('observe')).toBeDefined()
-    expect(screen.getByText('命中奖学金章节')).toBeDefined()
-  })
-
-  it('truncates long result', () => {
-    const long = 'x'.repeat(300)
-    render(<AgentActivityTimeline tools={[{ name: 't', status: 'end', result: long }]} />)
-    expect(screen.getByText(/x{100,}…/)).toBeDefined()
+    expect(screen.getByText('图片识别超时')).toBeDefined()
+    expect(container.textContent).not.toContain('TOOL_TIMEOUT')
   })
 })

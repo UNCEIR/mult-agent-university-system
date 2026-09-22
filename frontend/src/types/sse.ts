@@ -26,8 +26,16 @@ export const ChatToolDataSchema = z.object({
   tool: z.string(),
   status: z.enum(['start', 'end']),
   session_id: sessionIdField,
+  tool_call_id: z.string().optional(),
+  run_id: z.string().optional(),
   args: z.record(z.unknown()).optional(),
-  // Phase 4 E4：tool end 事件附 result（observe 载体，on_tool_end data.output 摘要化后）
+  // tool end：ok=false 表示工具级失败；顶层 error 仅用于 Agent/框架级失败。
+  ok: z.boolean().optional(),
+  code: z.string().optional(),
+  message: z.string().optional(),
+  retryable: z.boolean().optional(),
+  latency_ms: z.number().nullable().optional(),
+  /** @deprecated legacy 原始工具结果，chat 前端不再保存或渲染。 */
   result: z.string().optional(),
 })
 export type ChatToolData = z.infer<typeof ChatToolDataSchema>

@@ -2,6 +2,7 @@ import type {
   AuthResponse,
   ChatEvent,
   ChatHistoryMessage,
+  ChatImageAttachment,
   DocumentsListResult,
   DocumentsUploadResult,
   EvaluationEvent,
@@ -68,6 +69,7 @@ interface ChatRequestBody {
   message: string
   session_id: string
   user_id: string
+  image_ids?: string[]
   images?: string[]
 }
 
@@ -99,6 +101,26 @@ export const api = {
       },
     ),
 
+  uploadChatImages: async (
+    files: File[],
+    sessionId: string,
+    userId: string,
+    signal?: AbortSignal,
+  ): Promise<{ images: ChatImageAttachment[] }> => {
+    const form = new FormData()
+    files.forEach((file) => form.append('files', file))
+    form.append('session_id', sessionId)
+    form.append('user_id', userId)
+    const res = await fetch(`${API_BASE}/chat/images/upload`, { method: 'POST', body: form, signal })
+    const body = await res.json().catch(() => null)
+    if (!res.ok) throw new Error(errorMessage(body, res.statusText))
+    return unwrapEnvelope<{ images: ChatImageAttachment[] }>(body)
+  },
+  deleteChatImage: (imageId: string, userId: string, sessionId: string) =>
+    request<{ status: string; image_id: string }>(
+      `/chat/images/${encodeURIComponent(imageId)}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`,
+      { method: 'DELETE' },
+    ),
   closeSession: (sessionId: string, userId: string) =>
     request<{ status: string }>(
       `/chat/sessions/${encodeURIComponent(sessionId)}?user_id=${encodeURIComponent(userId)}`,

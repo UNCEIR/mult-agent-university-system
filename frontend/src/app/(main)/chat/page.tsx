@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Button, Card, Dropdown, Empty, Input, List, Space, Spin, Tag, Typography } from 'antd'
+import { Button, Card, Dropdown, Empty, Input, Space, Spin, Tag, Typography, Upload } from 'antd'
 import {
   SendOutlined,
   RobotOutlined,
@@ -12,6 +12,8 @@ import {
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
+  PictureOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons'
 import { api } from '../../../lib/api'
 import { useAuthStore } from '../../../stores/auth'
@@ -19,19 +21,33 @@ import { useSessionStore } from '../../../stores/session'
 import { useNotify } from '../../../lib/api/useNotify'
 import AgentActivityTimeline, { type ToolActivity } from '../../../components/AgentActivityTimeline'
 import MarkdownContent from '../../../components/MarkdownContent'
+import { upsertToolActivity } from '../../../lib/toolActivity'
 import type { AgentTreeNode } from '../../../types/sse'
+import type { ChatImageAttachment } from '../../../types'
+import { getChatAttachmentValidationStrategy } from '../../../lib/attachments'
+import { parseHistoryAttachments } from '../../../lib/chatImages'
 
 const { TextArea } = Input
 const { Text } = Typography
+const IMAGE_ATTACHMENT_STRATEGY = getChatAttachmentValidationStrategy('image')
 
 interface ChatItem {
+  id: string
   role: 'user' | 'assistant'
   content: string
   tools: ToolActivity[]
   usage?: Record<string, unknown>
   latency_ms?: number | null
   agentTree?: AgentTreeNode[]
+  attachments?: ChatImageAttachment[]
   error?: string
+}
+
+let chatItemSequence = 0
+
+function nextChatItemId(role: ChatItem['role']): string {
+  chatItemSequence += 1
+  return `${role}-${Date.now()}-${chatItemSequence}`
 }
 
 export default function ChatPage() {
@@ -45,7 +61,13 @@ export default function ChatPage() {
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [pendingImages, setPendingImages] = useState<ChatImageAttachment[]>([])
+  const [uploadingImages, setUploadingImages] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const uploadingRef = useRef(false)
+  const streamAssistantIdRef = useRef<string | null>(null)
+  const tokenBufferRef = useRef('')
+  const tokenRafRef = useRef<number | null>(null)
 
   // 登录态 → 初始化会话 store 并刷新列表
   useEffect(() => {
@@ -84,9 +106,15 @@ export default function ChatPage() {
         const restored: ChatItem[] = []
         for (const m of res.messages) {
           if (m.role === 'user') {
-            restored.push({ role: 'user', content: m.content ?? '', tools: [] })
+            restored.push({
+              id: nextChatItemId('user'),
+              role: 'user',
+              content: m.content ?? '',
+              tools: [],
+              attachments: parseHistoryAttachments(m.attachments_json),
+            })
           } else if (m.role === 'assistant') {
-            restored.push({ role: 'assistant', content: m.content ?? '', tools: [] })
+            restored.push({ id: nextChatItemId('assistant'), role: 'assistant', content: m.content ?? '', tools: [] })
           }
         }
         setItems(restored)
@@ -103,6 +131,40 @@ export default function ChatPage() {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [items])
+
+  const flushTokenBuffer = useCallback(() => {
+    if (tokenRafRef.current !== null) {
+      cancelAnimationFrame(tokenRafRef.current)
+      tokenRafRef.current = null
+    }
+    const assistantId = streamAssistantIdRef.current
+    const buffered = tokenBufferRef.current
+    tokenBufferRef.current = ''
+    if (!assistantId || !buffered) return
+
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === assistantId
+          ? { ...item, content: item.content + buffered }
+          : item,
+      ),
+    )
+  }, [])
+
+  const scheduleTokenFlush = useCallback(() => {
+    if (tokenRafRef.current !== null) return
+    tokenRafRef.current = requestAnimationFrame(flushTokenBuffer)
+  }, [flushTokenBuffer])
+
+  useEffect(
+    () => () => {
+      if (tokenRafRef.current !== null) cancelAnimationFrame(tokenRafRef.current)
+      tokenRafRef.current = null
+      tokenBufferRef.current = ''
+      streamAssistantIdRef.current = null
+    },
+    [],
+  )
 
   const handleNewSession = () => {
     sessionStore.newSession()
@@ -137,10 +199,49 @@ export default function ChatPage() {
     }
   }
 
+  const handleImageFiles = async (files: File[]) => {
+    if (!files.length || uploadingRef.current || uploadingImages || streaming) return
+    if (!user?.user_id) {
+      notify.toast.warning('请先登录')
+      router.push('/login')
+      return
+    }
+    const validation = IMAGE_ATTACHMENT_STRATEGY.validate(files, {
+      currentCount: pendingImages.length,
+      currentBytes: pendingImages.reduce((sum, image) => sum + (image.file_size ?? 0), 0),
+    })
+    if (validation.issues.length) {
+      notify.toast.warning(validation.issues.map((issue) => issue.message).join('；'))
+    }
+    if (!validation.accepted.length) return
+
+    const sessionId = sessionStore.activeSessionId ?? sessionStore.newSession()
+    if (sessionStore.activeSessionId == null) sessionStore.setActive(sessionId)
+    uploadingRef.current = true
+    setUploadingImages(true)
+    try {
+      const result = await api.uploadChatImages(validation.accepted, sessionId, user.user_id)
+      setPendingImages((prev) =>
+        [...prev, ...result.images].slice(0, IMAGE_ATTACHMENT_STRATEGY.maxFiles),
+      )
+      notify.toast.success(`已上传 ${result.images.length} 张图片`)
+    } catch (e: unknown) {
+      notify.toast.error(e, '图片上传失败')
+    } finally {
+      setUploadingImages(false)
+      uploadingRef.current = false
+    }
+  }
+
+  const handleRemoveImage = (imageId: string) => {
+    const target = pendingImages.find((image) => image.image_id === imageId)
+    setPendingImages((prev) => prev.filter((image) => image.image_id !== imageId))
+    if (user?.user_id && target) void api.deleteChatImage(imageId, user.user_id, sessionStore.activeSessionId ?? 'default').catch(() => {})
+  }
   const handleSend = useCallback(
     async (retryContent?: string) => {
       const content = (retryContent ?? input).trim()
-      if (!content || streaming) return
+      if ((!content && pendingImages.length === 0) || streaming) return
       if (!user?.user_id) {
         notify.toast.warning('请先登录')
         router.push('/login')
@@ -151,74 +252,80 @@ export default function ChatPage() {
       if (sessionStore.activeSessionId == null) {
         sessionStore.setActive(sessionId)
       }
+      const selectedImages = pendingImages
+      const userItemId = nextChatItemId('user')
+      const assistantItemId = nextChatItemId('assistant')
+      streamAssistantIdRef.current = assistantItemId
+      tokenBufferRef.current = ''
       setInput('')
+      setPendingImages([])
       setStreaming(true)
       setItems((prev) => [
         ...prev,
-        { role: 'user', content, tools: [] },
-        { role: 'assistant', content: '', tools: [] },
+        { id: userItemId, role: 'user', content: content || '[图片]', tools: [], attachments: selectedImages },
+        { id: assistantItemId, role: 'assistant', content: '', tools: [] },
       ])
 
       const ac = new AbortController()
-      const body = { message: content, session_id: sessionId, user_id: user.user_id }
+      const body = {
+        message: content || '请分析我上传的图片',
+        session_id: sessionId,
+        user_id: user.user_id,
+        image_ids: selectedImages.map((image) => image.image_id),
+      }
       try {
         for await (const evt of api.chatStreamWithRetry(body, ac.signal)) {
           if (evt.event === 'text') {
-            const token = evt.data.token
-            setItems((prev) => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              if (last && last.role === 'assistant') last.content += token
-              return next
-            })
+            tokenBufferRef.current += evt.data.token
+            scheduleTokenFlush()
           } else if (evt.event === 'tool') {
-            const tool = evt.data.tool
-            const result = evt.data.result
             setItems((prev) => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              if (last && last.role === 'assistant') {
-                const exist = last.tools.find((t) => t.name === tool)
-                if (exist) {
-                  exist.status = evt.data.status
-                  if (result) exist.result = result
-                } else {
-                  last.tools.push({ name: tool, status: evt.data.status, result })
-                }
-              }
-              return next
+              const assistantId = streamAssistantIdRef.current
+              return prev.map((item) =>
+                item.id === assistantId
+                  ? { ...item, tools: upsertToolActivity(item.tools, evt.data) }
+                  : item,
+              )
             })
           } else if (evt.event === 'done') {
+            flushTokenBuffer()
             setItems((prev) => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              if (last && last.role === 'assistant') {
-                last.usage = evt.data.usage
-                last.latency_ms = evt.data.latency_ms
-                if (evt.data.agent_tree) last.agentTree = evt.data.agent_tree
-              }
-              return next
+              const assistantId = streamAssistantIdRef.current
+              return prev.map((item) =>
+                item.id === assistantId
+                  ? {
+                      ...item,
+                      usage: evt.data.usage,
+                      latency_ms: evt.data.latency_ms,
+                      ...(evt.data.agent_tree ? { agentTree: evt.data.agent_tree } : {}),
+                    }
+                  : item,
+              )
             })
           } else if (evt.event === 'error') {
+            flushTokenBuffer()
             setItems((prev) => {
-              const next = [...prev]
-              const last = next[next.length - 1]
-              if (last && last.role === 'assistant')
-                last.error = `${evt.data.code}: ${evt.data.message}`
-              return next
+              const assistantId = streamAssistantIdRef.current
+              return prev.map((item) =>
+                item.id === assistantId
+                  ? { ...item, error: `${evt.data.code}: ${evt.data.message}` }
+                  : item,
+              )
             })
           }
         }
         refreshSessions()
       } catch (e: unknown) {
         setItems((prev) => {
-          const next = [...prev]
-          const last = next[next.length - 1]
-          if (last && last.role === 'assistant')
-            last.error = e instanceof Error ? e.message : '请求失败'
-          return next
+          const assistantId = streamAssistantIdRef.current
+          return prev.map((item) =>
+            item.id === assistantId
+              ? { ...item, error: e instanceof Error ? e.message : '请求失败' }
+              : item,
+          )
         })
       } finally {
+        flushTokenBuffer()
         setStreaming(false)
       }
     },
@@ -227,9 +334,13 @@ export default function ChatPage() {
     [
       input,
       streaming,
+      pendingImages,
+      uploadingImages,
       user?.user_id,
       sessionStore.activeSessionId,
       refreshSessions,
+      flushTokenBuffer,
+      scheduleTokenFlush,
       router,
       notify.toast,
     ],
@@ -268,102 +379,102 @@ export default function ChatPage() {
           新对话
         </Button>
         <div style={{ maxHeight: '62vh', overflowY: 'auto' }}>
-          <List
-            size="small"
-            dataSource={sessionStore.sessions}
-            locale={{
-              emptyText: (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  暂无历史会话
-                </Text>
-              ),
-            }}
-            renderItem={(s) => (
-              <div
-                key={s.session_id}
-                onClick={() => handleSwitch(s.session_id)}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  marginBottom: 4,
-                  background:
-                    s.session_id === sessionStore.activeSessionId ? '#EAF2FB' : 'transparent',
-                  border:
-                    s.session_id === sessionStore.activeSessionId
-                      ? '1px solid #CFE3F5'
-                      : '1px solid transparent',
-                }}
-              >
-                <div
+          {sessionStore.sessions.length === 0 ? (
+            <div style={{ padding: 16, textAlign: 'center' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                暂无历史会话
+              </Text>
+            </div>
+          ) : (
+            <ul aria-label="历史会话" style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+              {sessionStore.sessions.map((s) => (
+                <li
+                  key={s.session_id}
+                  onClick={() => handleSwitch(s.session_id)}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 6,
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    marginBottom: 4,
+                    listStyle: 'none',
+                    background:
+                      s.session_id === sessionStore.activeSessionId ? '#EAF2FB' : 'transparent',
+                    border:
+                      s.session_id === sessionStore.activeSessionId
+                        ? '1px solid #CFE3F5'
+                        : '1px solid transparent',
                   }}
                 >
-                  {renamingId === s.session_id ? (
-                    <Input
-                      size="small"
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onPressEnter={() => handleRename(s.session_id)}
-                      onBlur={() => setRenamingId(null)}
-                      onClick={(e) => e.stopPropagation()}
-                      autoFocus
-                    />
-                  ) : (
-                    <Text
-                      ellipsis
-                      style={{
-                        fontSize: 13,
-                        color:
-                          s.session_id === sessionStore.activeSessionId ? '#2E6FBF' : '#33475C',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {s.display_title || s.title || '新对话'}
-                    </Text>
-                  )}
-                  <Space size={0} onClick={(e) => e.stopPropagation()}>
-                    <Dropdown
-                      menu={{
-                        items: [
-                          {
-                            key: 'rename',
-                            icon: <EditOutlined />,
-                            label: '重命名',
-                            onClick: () => {
-                              setRenamingId(s.session_id)
-                              setRenameValue(s.display_title || s.title || '')
-                            },
-                          },
-                          {
-                            key: 'delete',
-                            icon: <DeleteOutlined />,
-                            label: '删除',
-                            danger: true,
-                            onClick: () => handleDelete(s.session_id),
-                          },
-                        ],
-                      }}
-                    >
-                      <Button
-                        type="text"
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 6,
+                    }}
+                  >
+                    {renamingId === s.session_id ? (
+                      <Input
                         size="small"
-                        icon={<MoreOutlined />}
-                        style={{ fontSize: 11 }}
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onPressEnter={() => handleRename(s.session_id)}
+                        onBlur={() => setRenamingId(null)}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
                       />
-                    </Dropdown>
-                  </Space>
-                </div>
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {s.message_count} 条消息
-                </Text>
-              </div>
-            )}
-          />
+                    ) : (
+                      <Text
+                        ellipsis
+                        style={{
+                          fontSize: 13,
+                          color:
+                            s.session_id === sessionStore.activeSessionId ? '#2E6FBF' : '#33475C',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {s.display_title || s.title || '新对话'}
+                      </Text>
+                    )}
+                    <Space size={0} onClick={(e) => e.stopPropagation()}>
+                      <Dropdown
+                        menu={{
+                          items: [
+                            {
+                              key: 'rename',
+                              icon: <EditOutlined />,
+                              label: '重命名',
+                              onClick: () => {
+                                setRenamingId(s.session_id)
+                                setRenameValue(s.display_title || s.title || '')
+                              },
+                            },
+                            {
+                              key: 'delete',
+                              icon: <DeleteOutlined />,
+                              label: '删除',
+                              danger: true,
+                              onClick: () => handleDelete(s.session_id),
+                            },
+                          ],
+                        }}
+                      >
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<MoreOutlined />}
+                          style={{ fontSize: 11 }}
+                        />
+                      </Dropdown>
+                    </Space>
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {s.message_count} 条消息
+                  </Text>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </Card>
 
@@ -425,10 +536,29 @@ export default function ChatPage() {
                     </Text>
                   </Space>
                   {item.role === 'user' ? (
-                    <div
-                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#33475C' }}
-                    >
-                      {item.content}
+                    <div>
+                      {item.attachments && item.attachments.length > 0 && (
+                        <Space size={6} wrap style={{ marginBottom: item.content ? 8 : 0 }}>
+                          {item.attachments.map((image) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={image.image_id}
+                              src={image.preview_url}
+                              alt={image.filename || '聊天图片'}
+                              style={{
+                                width: 96,
+                                height: 72,
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                border: '1px solid #CFE3F5',
+                              }}
+                            />
+                          ))}
+                        </Space>
+                      )}
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#33475C' }}>
+                        {item.content}
+                      </div>
                     </div>
                   ) : (
                     <MarkdownContent content={item.content} />
@@ -470,10 +600,72 @@ export default function ChatPage() {
           {streaming && <Spin size="small" style={{ marginLeft: 12 }} />}
         </div>
 
-        <Space.Compact style={{ width: '100%', marginTop: 8 }}>
+        {pendingImages.length > 0 && (
+          <Space size={8} wrap style={{ marginTop: 10 }}>
+            {pendingImages.map((image) => (
+              <div key={image.image_id} style={{ position: 'relative' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={image.preview_url}
+                  alt={image.filename || '待发送图片'}
+                  style={{
+                    width: 72,
+                    height: 56,
+                    objectFit: 'cover',
+                    borderRadius: 8,
+                    border: '1px solid #CFE3F5',
+                  }}
+                />
+                <Button
+                  type="text"
+                  size="small"
+                  aria-label={`移除 ${image.filename || image.image_id}`}
+                  icon={<CloseCircleOutlined />}
+                  onClick={() => handleRemoveImage(image.image_id)}
+                  disabled={streaming}
+                  style={{ position: 'absolute', top: -8, right: -8, background: '#fff' }}
+                />
+              </div>
+            ))}
+          </Space>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 8, alignItems: 'flex-end' }}>
+          <Upload
+            accept={IMAGE_ATTACHMENT_STRATEGY.accept}
+            multiple
+            showUploadList={false}
+            beforeUpload={(file, fileList) => {
+              if (file.uid === fileList[0]?.uid) {
+                void handleImageFiles(fileList as unknown as File[])
+              }
+              return Upload.LIST_IGNORE
+            }}
+            disabled={
+              streaming ||
+              uploadingImages ||
+              pendingImages.length >= IMAGE_ATTACHMENT_STRATEGY.maxFiles
+            }
+          >
+            <Button
+              icon={<PictureOutlined />}
+              loading={uploadingImages}
+              disabled={streaming || pendingImages.length >= IMAGE_ATTACHMENT_STRATEGY.maxFiles}
+              title="上传图片：PNG/JPEG/WebP/GIF/BMP"
+            >
+              图片
+            </Button>
+          </Upload>
           <TextArea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const files = Array.from(e.clipboardData.files)
+              if (files.length) {
+                e.preventDefault()
+                void handleImageFiles(files)
+              }
+            }}
             onPressEnter={(e) => {
               if (!e.shiftKey) {
                 e.preventDefault()
@@ -483,16 +675,18 @@ export default function ChatPage() {
             placeholder={`${sessionStore.activeSessionId ? '当前会话继续对话' : '新会话'} · Enter 发送 / Shift+Enter 换行`}
             autoSize={{ minRows: 1, maxRows: 4 }}
             disabled={streaming}
+            style={{ flex: 1 }}
           />
           <Button
             type="primary"
             icon={<SendOutlined />}
             onClick={() => handleSend()}
             loading={streaming}
+            disabled={uploadingImages}
           >
             发送
           </Button>
-        </Space.Compact>
+        </div>
       </Card>
     </div>
   )

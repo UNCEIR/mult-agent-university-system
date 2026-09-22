@@ -6,7 +6,7 @@
 - 用户范围约束："不要跑 phase3 未进行改动的功能，跑涉及调用新实装工具的功能、涉及记忆改造的功能"——只覆盖 `evaluation_comment_live`（直接调用 evaluation 三 @tool + `compute_weighted_grade`）、`report_math_live`（端到端 `/api/v1/report` + `mode` 透传）、`chat_intent` 5 个失败 case 重测。
 - 前置条件：
   1. Docker 容器（mysql/redis/minio/etcd/milvus/python-api）已停机数小时需重启；
-  2. LLM 模型从 `qwen3.5-flash` 切换为 `qwen3.8-flash`（`python/.env` 已更新）；
+  2. LLM 模型从 `qwen3.5-flash` 切换为 `deepseek-v4.1-flash`（`python/.env` 已更新）；
   3. python-api 镜像需重建（含 Phase 3 代码：summarization 五字段 prompt / evaluation 三 @tool / `compute_weighted_grade` 实装 / `MemoryExtractWorker` / `consolidation` / `checkpoint_backend` 预留）。
 
 ## 总体架构方案
@@ -26,7 +26,7 @@
 |------|------|
 | `python/Dockerfile`（无改） | `ARG PYTHON_IMAGE=python:3.12-slim` 默认走官方 registry，但 docker daemon 访问 `registry-1.docker.io:443` 失败 |
 | `docker-compose.yml`（无改） | 依赖链路 `python-api → mysql/redis healthy + milvus started` |
-| `python/.env`（用户改） | 模型切换为 `qwen3.8-flash` |
+| `python/.env`（用户改） | 模型切换为 `deepseek-v4.1-flash` |
 | `python/eval/runner.py` `_live_kb` | 修复 fresh asyncio.run 缺 runtime + JSON 解析 chunk_id（旁注使用） |
 | `docs/v2.0.0/plan.md` Phase 3 段 | 追加"Phase 3 真实端测兑现（2026-08-18）"小节 |
 | `docs/v2.0.0/notes/2026-08-18-phase3-live-eval-fulfillment.md` | 首版复盘笔记（本文件是第二版，补充 docker rebuild + runner 修复细节） |
@@ -99,7 +99,7 @@ ids = [m["chunk_id"] for m in data.get("matches", []) if m.get("chunk_id")]
 - `report_math_live --live` → **2/2**（37 学生 PDF 全成）
 - `kb_retrieval --live`（旁注）→ 1/10
 - `docker compose build --build-arg PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim python-api` → Built
-- `curl /health` → `status=healthy, model=qwen3.8-flash`
+- `curl /health` → `status=healthy, model=deepseek-v4.1-flash`
 
 ### 结果
 
@@ -121,7 +121,7 @@ ids = [m["chunk_id"] for m in data.get("matches", []) if m.get("chunk_id")]
 
 - **Docker 镜像源替代**：当 `registry-1.docker.io` 不可达时，`docker.m.daocloud.io` 是可用替代，缓存复用率高（pip install 层 + apt 层 CACHED），重建仅需 1~2 分钟。
 - **live eval 与 runner in-process 工具的边界**：`/api/v1/...` SSE 复用 lifespan runtime；runner 直接调工具需自行 `await runtime.init()` 并按工具实际返回格式解析（多数工具返回 JSON 字符串）。
-- **chat_intent 失败定位**：即使切到更强模型（qwen3.8-flash）仍 4/5 失败，说明意图路由问题在 prompt 与工具名映射层（非算力、非知识），后续 Phase 4 应做 NLU 专题。
+- **chat_intent 失败定位**：即使切到更强模型（deepseek-v4.1-flash）仍 4/5 失败，说明意图路由问题在 prompt 与工具名映射层（非算力、非知识），后续 Phase 4 应做 NLU 专题。
 - **`compute_weighted_grade` 公式验证**：85.85 = display×0.3 + exam×0.7 + bonus，跨学生成绩单稳定计算，证明 stub 实装正确。
 
 ### 后续

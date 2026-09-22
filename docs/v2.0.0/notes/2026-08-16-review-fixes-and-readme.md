@@ -27,7 +27,7 @@
   - `consolidation.py`：合并路径由"先 `delete_memory_entries` 再逐条 `upsert_memory_entry`"改为一次 `replace_memory_entries`。
   - `auth/tokens.py`：`verify_token` 签名比较改 `hmac.compare_digest`。
   - `api/auth.py`：register 捕获拆分（`IntegrityError`→409，其余→503），新增 `from sqlalchemy.exc import IntegrityError`。
-  - `settings.py`：修复用户编辑时丢失右引号导致的 SyntaxError（`llm_model: str = "qwen3.8-flash"` 补全）。
+  - `settings.py`：修复用户编辑时丢失右引号导致的 SyntaxError（`llm_model: str = "deepseek-v4.1-flash"` 补全）。
   - `.env.example`：补 `AUTH_TOKEN_SECRET` 占位注释。
   - `README.md`：317 行重写为约 130 行（Quick Start 7 步 / 主要 API 表 / 架构速览 4 条 / 目录结构图，删除 v1 遗留端点、backfill 脚本、过时目录树、FAQ）。
 - **兼容性与风险控制**：upsert SQL 保持 MySQL 方言不变（生产 MySQL）；SQLite 测试只覆盖删除路径 + upsert 参数构造；`test_memory_consolidation.py` 的 `_FakeRepo` 补 `replace_memory_entries` 方法保持兼容。

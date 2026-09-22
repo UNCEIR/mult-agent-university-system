@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from agent import runtime
 from agent.main.context import user_context
 from ai.llm_task_name import LLMTaskName
+from services.chat_tool_events import ChatToolEventTracker
 from services.sse_event_buffer import EventBuffer, parse_last_event_id, sse_with_id
 
 logger = structlog.get_logger()
@@ -98,7 +99,8 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息", min_length=1, max_length=8192)
     session_id: str = Field(default="default", description="会话 ID，用于 thread_id 恢复和 compaction")
     user_id: str = Field(default="", description="用户 ID（预留，后续用于个性化）")
-    images: list[str] = Field(default=[], description="图片附件（URL 或 data URL，上限 4）", max_length=4)
+    image_ids: list[str] = Field(default_factory=list, description="私有图片资产 ID（推荐）", max_length=4)
+    images: list[str] = Field(default_factory=list, description="已废弃：兼容 data URL 图片附件，上限 4", max_length=4)
 
 
 class ChatResponse(BaseModel):
@@ -151,16 +153,9 @@ async def chat(req: ChatRequest) -> ChatResponse:
     compaction_prefix = _inject_compaction_summary(repo, req.session_id)
     if compaction_prefix:
         messages.append({"role": "system", "content": compaction_prefix})
-    image_paths = await _save_images(req.session_id, req.images)
-    if image_paths:
-        messages.append(
-            {
-                "role": "user",
-                "content": "用户上传了图片附件（本地路径，可直接作为 image_recognize 的 image_url 入参）："
-                + json.dumps(image_paths, ensure_ascii=False)
-                + "。如需分析图片内容，请调用 image_recognize 工具。",
-            }
-        )
+    image_assets = await _prepare_image_assets(req)
+    if image_assets:
+        messages.append({"role": "user", "content": _attachment_context_message(image_assets)})
     messages.append({"role": "user", "content": req.message})
 
     with user_context(req.user_id):
@@ -180,7 +175,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     # 写纪律：本轮落库（匿名跳过）；提取阈值触发（后台）
     if repo is not None and req.user_id:
-        await persist_turn(repo, session_id=req.session_id, user_id=req.user_id, user_msg=req.message, assistant_msgs=[last] if all_messages else None)
+        await persist_turn(repo, session_id=req.session_id, user_id=req.user_id, user_msg=req.message, assistant_msgs=[last] if all_messages else None, user_attachments=image_assets)
         from agent.memory.extractor import maybe_extract
 
         asyncio.create_task(maybe_extract(repo, session_id=req.session_id, user_id=req.user_id, user_text=req.message))
@@ -245,6 +240,8 @@ async def chat_stream(req: ChatRequest, raw: Request):
         first_token_at: float | None = None
         t0 = time.monotonic()
         agent_runs: list[dict] = []
+        tool_tracker = ChatToolEventTracker(req.session_id)
+        image_assets: list[dict] = []
         try:
             from agent.memory.injector import inject_memory_entries
 
@@ -257,16 +254,9 @@ async def chat_stream(req: ChatRequest, raw: Request):
             compaction_prefix = _inject_compaction_summary(repo, req.session_id)
             if compaction_prefix:
                 messages.append({"role": "system", "content": compaction_prefix})
-            image_paths = await _save_images(req.session_id, req.images)
-            if image_paths:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "用户上传了图片附件（本地路径，可直接作为 image_recognize 的 image_url 入参）："
-                        + json.dumps(image_paths, ensure_ascii=False)
-                        + "。如需分析图片内容，请调用 image_recognize 工具。",
-                    }
-                )
+            image_assets = await _prepare_image_assets(req)
+            if image_assets:
+                messages.append({"role": "user", "content": _attachment_context_message(image_assets)})
             messages.append({"role": "user", "content": req.message})
             with user_context(req.user_id):
                 async for event in agent.astream_events(
@@ -275,6 +265,11 @@ async def chat_stream(req: ChatRequest, raw: Request):
                     version="v1",
                 ):
                     kind = event.get("event")
+                    for tool_payload in tool_tracker.handle(event):
+                        payload = json.dumps(tool_payload, ensure_ascii=False)
+                        event_id = await buf.append("tool", payload)
+                        yield sse_with_id("tool", payload, event_id)
+
                     if kind == "on_chat_model_stream":
                         chunk = event.get("data", {}).get("chunk")
                         token = ""
@@ -320,23 +315,12 @@ async def chat_stream(req: ChatRequest, raw: Request):
                         for _r in agent_runs:
                             if _r["run_id"] == str(run_id):
                                 _r["status"] = "error"
-                    elif kind in ("on_tool_start", "on_tool_end"):
-                        tool_name = event.get("name", "")
-                        status = "start" if kind == "on_tool_start" else "end"
-                        payload_obj: dict = {"tool": tool_name, "status": status, "session_id": req.session_id}
-                        # start 事件附带 args：供 runner 解析 dispatch_module.intent 等
-                        # 参数化工具的入参（v1 events API 的 data.input 是 kwargs dict）。
-                        # 解析失败回退空 dict，绝不阻塞流。
-                        if status == "start":
-                            try:
-                                data_input = (event.get("data") or {}).get("input")
-                                if isinstance(data_input, dict):
-                                    payload_obj["args"] = data_input
-                            except Exception:  # noqa: BLE001
-                                payload_obj["args"] = {}
-                        payload = json.dumps(payload_obj, ensure_ascii=False)
-                        event_id = await buf.append("tool", payload)
-                        yield sse_with_id("tool", payload, event_id)
+
+
+            for tool_payload in tool_tracker.fail_pending("TOOL_UNFINISHED", "工具未返回最终结果"):
+                payload = json.dumps(tool_payload, ensure_ascii=False)
+                event_id = await buf.append("tool", payload)
+                yield sse_with_id("tool", payload, event_id)
 
             reply = "".join(collected)
             messages_count = len(collected)
@@ -350,6 +334,7 @@ async def chat_stream(req: ChatRequest, raw: Request):
                     user_id=req.user_id,
                     user_msg=req.message,
                     assistant_msgs=[{"content": reply, "role": "assistant"}],
+                    user_attachments=image_assets,
                     usage_metadata=usage,
                 )
                 persisted = True
@@ -386,11 +371,16 @@ async def chat_stream(req: ChatRequest, raw: Request):
                 len(collected),
             )
         except Exception as exc:
-            logger.error("chat.stream_error", session_id=req.session_id, error=str(exc))
+            error_code = str(getattr(exc, "code", None) or type(exc).__name__.upper())
+            logger.error("chat.stream_error", session_id=req.session_id, error_type=type(exc).__name__, error_code=error_code)
             _metrics = getattr(runtime, "metrics_collector", None)
             if _metrics is not None:
-                _metrics.record_agent_call("main_agent", False, (time.monotonic() - t0) * 1000, str(exc))
-            err_payload_obj = {"code": getattr(exc, "code", type(exc).__name__.upper()), "message": str(exc), "session_id": req.session_id}
+                _metrics.record_agent_call("main_agent", False, (time.monotonic() - t0) * 1000, error_code)
+            for tool_payload in tool_tracker.fail_pending("TOOL_NODE_ERROR", "工具执行未完成"):
+                payload = json.dumps(tool_payload, ensure_ascii=False)
+                event_id = await buf.append("tool", payload)
+                yield sse_with_id("tool", payload, event_id)
+            err_payload_obj = {"code": error_code, "message": _public_error_message(error_code), "session_id": req.session_id}
             err_payload = json.dumps(err_payload_obj, ensure_ascii=False)
             err_event_id = await buf.append("error", err_payload)
             yield sse_with_id("error", err_payload, err_event_id)
@@ -420,6 +410,7 @@ async def chat_stream(req: ChatRequest, raw: Request):
                             user_id=req.user_id,
                             user_msg=req.message,
                             assistant_msgs=[{"content": reply_so_far, "role": "assistant"}],
+                            user_attachments=image_assets,
                             usage_metadata=usage,
                         )
                     )
@@ -440,45 +431,50 @@ async def chat_stream(req: ChatRequest, raw: Request):
     )
 
 
+def _public_error_message(code: str) -> str:
+    return {
+        "QUOTA": "当前请求量过大，请稍后重试",
+        "TIMEOUT": "服务响应超时，请稍后重试",
+        "API_CONNECTION": "模型服务暂时不可用，请稍后重试",
+    }.get(str(code).upper(), "服务暂时不可用，请稍后重试")
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _save_images(session_id: str, images: list[str]) -> list[str]:
-    """图片附件落盘（data URL/URL → 本地路径），供 image_recognize 读取。
+async def _prepare_image_assets(req: ChatRequest) -> list[dict]:
+    """把 image_ids / 旧 images 统一解析为私有图片资产元数据。"""
+    from agent.images.service import ImageAssetError, get_image_asset_service
 
-    返回本地路径列表；失败项跳过（尽力而为，不阻塞对话）。
-    """
-    if not images:
+    if not req.image_ids and not req.images:
         return []
-    import base64
-    import uuid
-    from pathlib import Path
+    if not req.user_id:
+        raise HTTPException(status_code=401, detail="请先登录后上传图片")
+    service = getattr(runtime, "image_asset_service", None) or get_image_asset_service()
+    try:
+        if req.image_ids:
+            return await service.resolve_many(req.image_ids, user_id=req.user_id, session_id=req.session_id)
+        return await service.ingest_data_items(req.images, user_id=req.user_id, session_id=req.session_id)
+    except ImageAssetError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc
 
-    from config import get_settings
 
-    out_dir = Path(__file__).resolve().parent.parent / ".documents" / "chat_images" / session_id
-    out_dir.mkdir(parents=True, exist_ok=True)
-    saved: list[str] = []
-    for i, item in enumerate(images[:4]):
-        try:
-            if item.startswith("data:"):
-                _, payload = item.split(",", 1)
-                data = base64.b64decode(payload)
-                path = out_dir / f"{i}_{uuid.uuid4().hex[:6]}.png"
-            else:
-                import httpx as _httpx
-
-                resp = _httpx.get(item, verify=get_settings().httpx_verify_ssl, timeout=30)
-                resp.raise_for_status()
-                data = resp.content
-                path = out_dir / f"{i}_{uuid.uuid4().hex[:6]}.png"
-            path.write_bytes(data)
-            saved.append(str(path))
-        except Exception:  # noqa: BLE001
-            continue
-    return saved
-
+def _attachment_context_message(assets: list[dict]) -> str:
+    """只把 image_id 与元数据注入 Agent，绝不注入路径/base64。"""
+    public_items = [
+        {
+            "image_id": a["image_id"],
+            "mime_type": a.get("mime_type", ""),
+            "width": a.get("width", 0),
+            "height": a.get("height", 0),
+        }
+        for a in assets
+    ]
+    return (
+        "用户上传了图片附件（只能使用以下 image_id 调用 image_recognize；"
+        "禁止传 base64、本地路径或外部 URL）："
+        + json.dumps(public_items, ensure_ascii=False)
+    )
 
 # ── 会话管理（Phase 3.5）：历史会话列表 / 消息回显 / 重命名 / 软删 ──────
 

@@ -29,6 +29,30 @@ describe('zod SSE event schemas', () => {
     expect(result.success).toBe(true)
   })
 
+  it('parses ChatEvent.tool failure fields without stripping', () => {
+    const result = ChatEventSchema.safeParse({
+      event: 'tool',
+      data: {
+        tool: 'web_search',
+        status: 'end',
+        session_id: 's1',
+        tool_call_id: 'call-1',
+        ok: false,
+        code: 'TOOL_TIMEOUT',
+        message: '查询超时',
+        retryable: true,
+        latency_ms: 10020,
+      },
+    })
+    expect(result.success).toBe(true)
+    if (result.success && result.data.event === 'tool') {
+      expect(result.data.data.tool_call_id).toBe('call-1')
+      expect(result.data.data.ok).toBe(false)
+      expect(result.data.data.code).toBe('TOOL_TIMEOUT')
+      expect(result.data.data.retryable).toBe(true)
+    }
+  })
+
   it('rejects ChatEvent.text missing token', () => {
     const result = ChatEventSchema.safeParse({
       event: 'text',

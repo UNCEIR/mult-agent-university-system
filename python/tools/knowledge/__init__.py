@@ -12,6 +12,12 @@
 from __future__ import annotations
 
 from .query_handbook import query_handbook
+from .adaptive_retrieve import adaptive_knowledge_retrieve
+from .query_handbook import query_handbook
 from .query_transcript import query_transcript
 
-__all__ = ["query_handbook", "query_transcript"]
+__all__ = [
+    "adaptive_knowledge_retrieve",
+    "query_handbook",
+    "query_transcript",
+]

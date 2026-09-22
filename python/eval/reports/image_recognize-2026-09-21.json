@@ -1,0 +1,64 @@
+{
+  "date": "2026-09-21",
+  "set": "image_recognize",
+  "mode": "smoke",
+  "judge": false,
+  "judge_metrics": null,
+  "metrics": {
+    "total": 3,
+    "passed": 3,
+    "pass_rate": 1.0,
+    "latency_p50": null,
+    "latency_p95": null,
+    "ttft_p50": null,
+    "api_latency_p50": null,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "ndcg_at_k_avg": null,
+    "f1_at_k_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 3,
+        "passed": 3
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "ir_01",
+      "type": "image_recognize",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "ir_02",
+      "type": "image_recognize",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    },
+    {
+      "case_id": "ir_03",
+      "type": "image_recognize",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 0.0,
+      "mode": "smoke"
+    }
+  ],
+  "judge_results": null
+}

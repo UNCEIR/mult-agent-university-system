@@ -92,7 +92,7 @@ python scripts/import_langsmith_dataset.py --set <name>  # 导入 LangSmith
 
 | 日期 | 集 | smoke | live | 备注 |
 |------|----|-------|------|------|
-| 2026-08-13/14 | chat_intent | 20/20 | 17/20（2026-08-15，qwen3.8-flash） | 断言器管道正确；live：15 条路由正确；intent_15/16 需 images 附件（执行器支持后 PASS，qwen3.8-flash 正确调 image_recognize）；**intent_17（code_interpreter）持续 FAIL**——qwen3.5-plus 与 qwen3.8-flash 均直接给代码文本不调工具（真实行为偏差，待 prompt/skill 强化"执行类请求必须调工具"） |
+| 2026-08-13/14 | chat_intent | 20/20 | 17/20（2026-08-15，deepseek-v4.1-flash） | 断言器管道正确；live：15 条路由正确；intent_15/16 需 images 附件（执行器支持后 PASS，deepseek-v4.1-flash 正确调 image_recognize）；**intent_17（code_interpreter）持续 FAIL**——qwen3.5-plus 与 deepseek-v4.1-flash 均直接给代码文本不调工具（真实行为偏差，待 prompt/skill 强化"执行类请求必须调工具"） |
 | 2026-08-14 | report_math | 10/10 | 1/10（2026-08-15） | 工具层确定性断言（subject/grades）通过；fill/Journal 等单元级断言 live 无对应字段如实 FAIL（回归靠 smoke+单测） |
 | 2026-08-14 | evaluation_comment | 正例过/反例拦 | 0/10（2026-08-15） | **链路真实工作**（每条 20-49s 真实生成、核验闸放行 status=llm、落库）；case 断言为虚构数据设计（data_numbers=[90.5...]），与真实输出（71 门课/148.5 学分）不匹配——live 需"真实数据版"case 集（按 §6 登记约定后续补充 `evaluation_comment_live.jsonl`） |
 | 2026-08-14 | kb_retrieval | 10/10 | 0/10（2026-08-15） | `expected.chunk_ids` 为虚构标注（handbook_chunk_*），真实检索返回真实 chunk_id 体系（handbook_2025_acff6de8:N）——标注需按真实 chunk_id 重写才能做 recall 断言 |

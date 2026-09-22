@@ -200,7 +200,7 @@ v1 时代 supervisor 只管推荐，**没**报告/评价的意图识别。v2 mai
 **T（任务）**：上游 LLM 配额到位后，**严格跑真实端测**并**只覆盖涉及 Phase 3 改动的功能**（新实装工具 + 记忆改造），不重复跑未改动集（image_generate / web_search 等）。
 
 **A（行动）**（3 步）：
-1. **切换 LLM 模型**：`qwen3.5-flash` → `qwen3.8-flash`（算力可用）
+1. **切换 LLM 模型**：`qwen3.5-flash` → `deepseek-v4.1-flash`（算力可用）
 2. **Docker rebuild**：镜像源改 `docker.m.daocloud.io/library/python:3.12-slim`（registry-1.docker.io 不可达）
 3. **跑 3 集 live**：`evaluation_comment_live`（6/6）/ `report_math_live`（2/2）/ `chat_intent 4 失败 case`（4/4 修复后通过）
 
@@ -212,7 +212,7 @@ v1 时代 supervisor 只管推荐，**没**报告/评价的意图识别。v2 mai
 
 ### 60 秒口播
 
-> Phase 3 编码完成但真实 LLM 端测一直延期。算力到位后切换 qwen3.8-flash + 改 DaoCloud 镜像源，跑 3 集 live 端测。评价 6/6（71 门课加权 85.85）、报告 2/2（37 学生 PDF 全成）、chat_intent 4/4 修复后通过。Phase 3 试金石 #1/#5/#10 全部兑现。
+> Phase 3 编码完成但真实 LLM 端测一直延期。算力到位后切换 deepseek-v4.1-flash + 改 DaoCloud 镜像源，跑 3 集 live 端测。评价 6/6（71 门课加权 85.85）、报告 2/2（37 学生 PDF 全成）、chat_intent 4/4 修复后通过。Phase 3 试金石 #1/#5/#10 全部兑现。
 
 ### 3 分钟展开
 

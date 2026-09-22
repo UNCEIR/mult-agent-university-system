@@ -64,9 +64,9 @@ async def test_image_recognize_vision(mcp_client):
     llm = MagicMock()
     llm.ainvoke = AsyncMock(return_value=MagicMock(content="这是一张课程表图片"))
     with patch("tools.image.image_recognize._build_vision_llm", return_value=llm), patch(
-        "tools.image.image_recognize._to_data_url", return_value="data:image/png;base64,AA=="
+        "tools.image.image_recognize._load_image_data_urls", new=AsyncMock(return_value=["data:image/png;base64,AA=="])
     ):
-        result = await image_recognize.ainvoke({"image_url": "http://fake/img.png", "question": "这是什么"})
+        result = await image_recognize.ainvoke({"image_ids": ["img_abc123456789012345"], "question": "这是什么", "mode": "describe"})
     assert "课程表" in result
 
 

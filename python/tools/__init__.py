@@ -36,7 +36,7 @@ from .registry import ToolRegistry, get_registry
 from .system import dispatch_module, get_current_time, list_available_skills
 from .chat import web_search, writing_assistant
 from .documents import chunk_document, parse_document
-from .knowledge import query_handbook, query_transcript
+from .knowledge import adaptive_knowledge_retrieve, query_handbook, query_transcript
 from .evaluation import (
     compute_radar_values,
     design_dimensions,
@@ -79,6 +79,7 @@ __all__ = [
     "parse_document",
     "chunk_document",
     # query_knowledge 在 2026-08-25 重构中删除，被 query_handbook / query_transcript 替代
+    "adaptive_knowledge_retrieve",
     "query_handbook",
     "query_transcript",
     "recommend_courses",

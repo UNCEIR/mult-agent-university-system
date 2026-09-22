@@ -119,6 +119,57 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     INDEX idx_doc_chunks_page (dataset_id, page_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------------------------ chat_attachments
+-- 私有聊天图片资产：image_id 对外引用，实际对象在 MinIO/本地兜底；不允许进入 public images/ 命名空间
+CREATE TABLE IF NOT EXISTS chat_attachments (
+    attachment_id VARCHAR(40) PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    session_id VARCHAR(64) NOT NULL,
+    file_key VARCHAR(512) NOT NULL,
+    mime_type VARCHAR(64) NOT NULL,
+    filename VARCHAR(255) NOT NULL DEFAULT '',
+    file_size INT NOT NULL DEFAULT 0,
+    width INT NOT NULL DEFAULT 0,
+    height INT NOT NULL DEFAULT 0,
+    sha256 CHAR(64) NOT NULL DEFAULT '',
+    status VARCHAR(16) NOT NULL DEFAULT 'ready',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NULL,
+    INDEX idx_chat_attachments_user_session (user_id, session_id, created_at DESC),
+    INDEX idx_chat_attachments_sha (sha256),
+    INDEX idx_chat_attachments_expiry (status, expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+-- 兼容已存在的 chat_attachments（旧版无 filename 列）
+SET @col_chat_attachment_filename := (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'chat_attachments'
+      AND COLUMN_NAME = 'filename'
+);
+SET @stmt_chat_attachment_filename := IF(
+    @col_chat_attachment_filename = 0,
+    "ALTER TABLE chat_attachments ADD COLUMN filename VARCHAR(255) NOT NULL DEFAULT '' AFTER mime_type",
+    "DO 0"
+);
+PREPARE stmt_chat_attachment_filename FROM @stmt_chat_attachment_filename;
+EXECUTE stmt_chat_attachment_filename;
+DEALLOCATE PREPARE stmt_chat_attachment_filename;
+-- 2026-09-21：兼容已存在的 document_chunks，增加中文 ngram 全文索引（不存在时才 ALTER）
+SET @has_doc_chunks_ft := (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'document_chunks'
+      AND INDEX_NAME = 'ft_document_chunks_content'
+);
+SET @stmt_doc_chunks_ft := IF(
+    @has_doc_chunks_ft = 0,
+    "ALTER TABLE document_chunks ADD FULLTEXT INDEX ft_document_chunks_content (content) WITH PARSER ngram",
+    "DO 0"
+);
+PREPARE stmt_doc_chunks_ft FROM @stmt_doc_chunks_ft;
+EXECUTE stmt_doc_chunks_ft;
+DEALLOCATE PREPARE stmt_doc_chunks_ft;
+
 -- ------------------------------------------------------------ report_artifacts
 -- report(教师端批量成绩单)产物元数据：一学生一行，支持失败重试/下载寻址/审计
 CREATE TABLE IF NOT EXISTS report_artifacts (
@@ -206,6 +257,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     role VARCHAR(16) NOT NULL,                           -- user | assistant | tool
     content MEDIUMTEXT,
     tool_calls_json JSON,                                -- assistant 工具调用（审计）
+    attachments_json JSON,                               -- 用户消息图片附件元数据（私有 image_id）
     usage_json JSON,                                     -- token 统计（Phase 4 指标源）
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_chat_messages_session_seq (session_id, seq),
@@ -213,6 +265,21 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     INDEX idx_chat_messages_session (session_id, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 2026-09-21：兼容已存在的 chat_messages（旧版无 attachments_json 列）
+SET @col_chat_attachments := (
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'chat_messages'
+      AND COLUMN_NAME = 'attachments_json'
+);
+SET @stmt_chat_attachments := IF(
+    @col_chat_attachments = 0,
+    "ALTER TABLE chat_messages ADD COLUMN attachments_json JSON NULL AFTER tool_calls_json",
+    "DO 0"
+);
+PREPARE stmt_chat_attachments FROM @stmt_chat_attachments;
+EXECUTE stmt_chat_attachments;
+DEALLOCATE PREPARE stmt_chat_attachments;
 -- ------------------------------------------------------------ chat_memory_entries
 -- 跨会话长期记忆：按 user_id 隔离，新会话首轮注入；AGENTS.md 不再承载用户级内容
 CREATE TABLE IF NOT EXISTS chat_memory_entries (

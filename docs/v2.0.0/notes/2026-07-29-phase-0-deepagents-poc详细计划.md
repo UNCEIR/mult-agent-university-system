@@ -15,7 +15,7 @@
 | # | 验证轴 | 验证什么 | 对应决策 |
 |---|--------|---------|---------|
 | A | **deepagents 可用性** | 包能装上、`create_deep_agent` 能跑通一个最小 main agent + 1 个 tool 的 ReAct 循环 | 决策 3 |
-| B | **中转站兼容** | deepagents 经 `ChatOpenAI`（`langchain-openai`）连 `one.zhique.cn/v1` + `qwen3.8-flash`，能完成带 `bind_tools` 的 tool-calling（中转站对 OpenAI tool-calling 协议的兼容） | 决策 3、CLAUDE.md「LLM 与 Embedding 统一走中转站」 |
+| B | **中转站兼容** | deepagents 经 `ChatOpenAI`（`langchain-openai`）连 `one.zhique.cn/v1` + `deepseek-v4.1-flash`，能完成带 `bind_tools` 的 tool-calling（中转站对 OpenAI tool-calling 协议的兼容） | 决策 3、CLAUDE.md「LLM 与 Embedding 统一走中转站」 |
 | C | **Docker 兼容** | POC 脚本在 `docker-compose.python.yml --profile python` 容器内跑通（构建层装得上 deepagents 依赖、运行时能出网到中转站） | 决策 15、CLAUDE.md「任何 Python 代码修改后 Docker 必须 `--build`」 |
 
 ### 1.2 范围（POC 刻意不做的事）
@@ -56,7 +56,7 @@ POC 的工具用一个**确定性、无外部依赖**的 toy tool（如 `add(a, 
 ### 2.2 假设
 
 - `python/.env` 已有可用 `LLM_API_KEY`（v1 已验证可调中转站，前提成立）
-- 中转站对 `qwen3.8-flash` 暴露 OpenAI 兼容 `/v1/chat/completions`（v1 已用 `ChatOpenAI` 验证）
+- 中转站对 `deepseek-v4.1-flash` 暴露 OpenAI 兼容 `/v1/chat/completions`（v1 已用 `ChatOpenAI` 验证）
 - deepagents 建在 LangGraph `create_react_agent` 之上（决策 3 源码调研结论，POC 第 0 步核对）
 
 ---
@@ -101,7 +101,7 @@ def add(a: float, b: float) -> float:
 
 
 def build_poc_llm() -> ChatOpenAI:
-    """复用 v1 的中转站配置（one.zhique.cn / qwen3.8-flash / verify_ssl）。"""
+    """复用 v1 的中转站配置（one.zhique.cn / deepseek-v4.1-flash / verify_ssl）。"""
     s = get_settings()
     # 与 services/llm_client.py:_create_chat_openai 保持一致的 SSL 处理
     http_client = httpx.Client(verify=s.httpx_verify_ssl)
@@ -268,7 +268,7 @@ POC 脚本经 `from config import get_settings` 复用 v1 全部中转站配置�
 |------|------------------|------|
 | `LLM_API_KEY` | `sk-***` | 中转站鉴权 |
 | `LLM_BASE_URL` | `https://one.zhique.cn/v1` | OpenAI 兼容端点 |
-| `LLM_MODEL` | `qwen3.8-flash` | 主模型 |
+| `LLM_MODEL` | `deepseek-v4.1-flash` | 主模型 |
 | `LLM_ENABLE_THINKING` | `true` | `extra_body`，第 4 步对照关掉 |
 | `HTTPX_VERIFY_SSL` | `false` | 中转站证书 SAN 不匹配，必须关 |
 

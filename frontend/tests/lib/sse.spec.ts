@@ -209,6 +209,34 @@ describe('consumeSSEWithRetry', () => {
     expect(retryEvents[0]).toMatchObject({ attempt: 1, delayMs: 100, lastEventId: undefined })
   })
 
+  it('ignores duplicate or older event ids within a stream', async () => {
+    const fetchMock = vi.fn(async () =>
+      makeSseResponse([
+        'id: 42',
+        'event: text',
+        'data: {"token":"a"}',
+        '',
+        'id: 42',
+        'event: text',
+        'data: {"token":"a-again"}',
+        '',
+        'id: 43',
+        'event: text',
+        'data: {"token":"b"}',
+        '',
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const out: Array<{ event: string; data: unknown; id?: string }> = []
+    for await (const evt of consumeSSEWithRetry('/api/v1/test', { method: 'POST' })) {
+      out.push(evt as { event: string; data: unknown; id?: string })
+    }
+
+    expect(out.map((evt) => evt.id)).toEqual(['42', '43'])
+    expect(out.map((evt) => (evt.data as { token: string }).token)).toEqual(['a', 'b'])
+  })
+
   it('on second connection carries Last-Event-ID header when first run yielded events', async () => {
     // 用真定时器：第一次 fetch 让 controller 立即 error，
     // consumer reader.read() 后续抛错 → 触发 retry 路径。

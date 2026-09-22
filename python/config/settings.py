@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     debug: bool = False
     llm_api_key: str = ""
     llm_base_url: str = ""
-    llm_model: str = "qwen3.8-flash"
+    llm_model: str = "deepseek-v4.1-flash"
     llm_temperature: float = 0.7
     llm_max_tokens: int = 4096
     llm_enable_thinking: bool = False
@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     checkpoint_backend: str = "sqlite"  # 决策 20：sqlite（默认，单实例）/ redis（仅实例数 > 1 时启用）
 
     # Phase 4：context_window 语义改为「缺省，被 model_catalog 覆盖」；get_model_meta(model) 优先
-    agent_context_window_tokens: int = 128000  # 缺省上下文窗口（qwen3.8-flash ≈ 128K）
+    agent_context_window_tokens: int = 128000  # 缺省上下文窗口（deepseek-v4.1-flash ≈ 128K）
     agent_compaction_trigger_tokens: int | None = None  # None 时用 context_window-13000
     agent_compaction_keep_tokens: int = 20000  # 决策 11: keepRecentTokens=20000
     agent_compaction_reserve_tokens: int = 16384  # Phase 4：窗口预留（window - reserve 触发压缩）
@@ -146,6 +146,18 @@ class Settings(BaseSettings):
 
     # ── Phase 2：视觉模型（image_recognize 直连，复用文本模型 key）──
     vision_model: str = "qwen3-vl-plus"  # 多模态选型（用户 2026-08-13 确认）
+    vision_timeout_seconds: float = 60.0
+    vision_connect_timeout_seconds: float = 5.0
+    vision_max_retries: int = 1
+    vision_max_tokens: int = 2048
+    vision_temperature: float = 0.1
+    vision_max_images: int = 4
+    vision_max_image_bytes: int = 10 * 1024 * 1024
+    vision_max_total_image_bytes: int = 30 * 1024 * 1024
+    vision_max_pixels: int = 36_000_000
+    vision_max_side: int = 2048
+    vision_ttl_days: int = 30
+    minio_chat_bucket: str = "chat-uploads"
 
     # ── Phase 2：插件工具 ────────────────────────────────────────────
     tavily_api_key: str = ""  # web_search 直连兜底（MCP 主路熔断时用）

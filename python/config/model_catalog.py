@@ -21,7 +21,7 @@ class ModelMeta:
 
 # 占位定价（公开市场价量级，可按实际账单修订）：元 / 1K tokens
 _CATALOG: dict[str, ModelMeta] = {
-    "qwen3.8-flash": ModelMeta(
+    "deepseek-v4.1-flash": ModelMeta(
         context_window=128000, max_tokens=8192,
         cost_input=0.0005, cost_output=0.002,
         cost_tiers={"default": {"input": 0.0005, "output": 0.002}},

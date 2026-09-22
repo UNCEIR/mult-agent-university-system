@@ -61,7 +61,7 @@ pytest tests/ -m "not slow"               299 passed, 4 deselected
 ```bash
 docker compose build --build-arg PYTHON_IMAGE=docker.m.daocloud.io/library/python:3.12-slim python-api
 docker compose up -d python-api
-curl /health → 200 healthy (model=qwen3.8-flash, registry=28 tools, main_agent=14 tools)
+curl /health → 200 healthy (model=deepseek-v4.1-flash, registry=28 tools, main_agent=14 tools)
 
 docker exec -w /app ... python -m eval_runner.runner --set chat_intent --live \
   --case intent_04,intent_05,intent_06,intent_07

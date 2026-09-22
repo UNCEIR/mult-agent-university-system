@@ -47,6 +47,7 @@ CREATE TABLE chat_messages (
     role VARCHAR(16) NOT NULL,
     content TEXT,
     tool_calls_json TEXT,
+    attachments_json TEXT,
     usage_json TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
@@ -102,7 +103,7 @@ def test_should_compact_boundary():
 def test_append_and_get_latest_compaction(sqlite_repo):
     rid = sqlite_repo.append_compaction(
         user_id="u1", session_id="s1", summary="摘要A",
-        first_kept_message_id=10, model="qwen3.8-flash", reason="threshold", status="ok",
+        first_kept_message_id=10, model="deepseek-v4.1-flash", reason="threshold", status="ok",
     )
     assert rid > 0
     latest = sqlite_repo.get_latest_compaction("s1")

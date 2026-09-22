@@ -125,7 +125,7 @@ POST /api/v1/recommend
 ### LLM 与 Embedding
 
 已废弃： `one.zhique.cn` /v1（OpenAI 兼容协议），共用 `api_key` / `base_url`：
-- **LLM**：`ChatOpenAI`（`python/ai/llm_client.py`），模型 `qwen3.8-flash`
+- **LLM**：`ChatOpenAI`（`python/ai/llm_client.py`），模型 `deepseek-v4.1-flash`
 - **Embedding**：`OpenAIEmbeddingClient`（`python/ai/embedding_client.py`），模型 `text-embedding-v4`（1024 维）
 - **LangSmith Tracing**：三个 AOP 单点（`tracing.py` 配置激活 + `llm_client.py` LLM 工厂 + `embedding_client.py` Embedding 工厂），零侵入全覆盖。所有 LLM 调用必须走工厂并传入 `LLMTaskName` 枚举值，禁止直接 `ChatOpenAI(...)`。
 - **关键约束**：`configure_langsmith_tracing()` 在 `app.py` **模块最顶部**调用（`get_env_var` 有 `lru_cache`）。`get_settings()` 有 `lru_cache`，测试时需 mock 而非 `monkeypatch.setenv`。

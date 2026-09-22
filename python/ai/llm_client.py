@@ -72,6 +72,8 @@ def build_chat_openai(
     base_url: str | None = None,
     api_key: str | None = None,
     enable_thinking: bool | None = None,
+    request_timeout: float | None = None,
+    max_retries: int | None = None,
 ) -> ChatOpenAI:
     settings = get_settings()
     llm = _create_chat_openai(
@@ -82,6 +84,8 @@ def build_chat_openai(
         base_url=base_url,
         api_key=api_key,
         enable_thinking=enable_thinking,
+        request_timeout=request_timeout,
+        max_retries=max_retries,
     )
     if task_name is not None:
         # 用 pydantic 的 name 字段命名 trace（LangSmith 的 run name 取自
@@ -101,6 +105,8 @@ def build_tool_calling_llm(
     base_url: str | None = None,
     api_key: str | None = None,
     enable_thinking: bool | None = None,
+    request_timeout: float | None = None,
+    max_retries: int | None = None,
 ) -> ChatOpenAI:
     llm = _create_chat_openai(
         temperature=temperature,
@@ -109,6 +115,8 @@ def build_tool_calling_llm(
         base_url=base_url,
         api_key=api_key,
         enable_thinking=enable_thinking,
+        request_timeout=request_timeout,
+        max_retries=max_retries,
     )
     if task_name is not None:
         # _ChatModelBinding.get_name() 委托给内部 bound，故在 bind 前命名。
@@ -125,6 +133,8 @@ def _create_chat_openai(
     base_url: str | None = None,
     api_key: str | None = None,
     enable_thinking: bool | None = None,
+    request_timeout: float | None = None,
+    max_retries: int | None = None,
 ) -> ChatOpenAI:
     settings = get_settings()
     extra_body = {}
@@ -140,7 +150,7 @@ def _create_chat_openai(
     # 会绕过 agent_timeout_* 与 supervisor_global_timeout，表现为 SSE 链路静默挂死、前端空流。
     # 用 getattr + 类型校验兜底：部分测试以 MagicMock 模拟 settings 且不含这些字段，
     # 此时回退为 None（不显式限制），保证既有调用点行为不回归。
-    timeout_seconds = getattr(settings, "llm_timeout_seconds", None)
+    timeout_seconds = request_timeout if request_timeout is not None else getattr(settings, "llm_timeout_seconds", None)
     has_timeout = isinstance(timeout_seconds, (int, float))
     timeout = None
     if has_timeout:
@@ -152,7 +162,7 @@ def _create_chat_openai(
     http_client = httpx.Client(verify=verify, timeout=timeout)
     http_async_client = httpx.AsyncClient(verify=verify, timeout=timeout)
 
-    llm_max_retries = getattr(settings, "llm_max_retries", None)
+    llm_max_retries = max_retries if max_retries is not None else getattr(settings, "llm_max_retries", None)
     if not isinstance(llm_max_retries, int):
         llm_max_retries = None  # None → 沿用 langchain / openai SDK 默认
 

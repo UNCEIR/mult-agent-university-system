@@ -1,0 +1,74 @@
+{
+  "date": "2026-09-21",
+  "set": "rag_agentic_live_smoke",
+  "mode": "live",
+  "judge": false,
+  "judge_metrics": null,
+  "metrics": {
+    "total": 3,
+    "passed": 3,
+    "pass_rate": 1.0,
+    "latency_p50": 647.3,
+    "latency_p95": 8498.7,
+    "ttft_p50": null,
+    "api_latency_p50": null,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "total": 0
+    },
+    "context_recall_avg": null,
+    "context_precision_avg": null,
+    "ndcg_at_k_avg": null,
+    "f1_at_k_avg": null,
+    "by_difficulty": {
+      "easy": {
+        "total": 2,
+        "passed": 2
+      },
+      "medium": {
+        "total": 1,
+        "passed": 1
+      }
+    }
+  },
+  "results": [
+    {
+      "case_id": "rag_live_01",
+      "type": "rag_agentic",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 8498.7,
+      "mode": "live",
+      "usage": {},
+      "detail": "status=ok evidence=8 planner="
+    },
+    {
+      "case_id": "rag_live_02",
+      "type": "rag_agentic",
+      "difficulty": "easy",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 647.3,
+      "mode": "live",
+      "usage": {},
+      "detail": "status=ok evidence=8 planner="
+    },
+    {
+      "case_id": "rag_live_03",
+      "type": "rag_agentic",
+      "difficulty": "medium",
+      "pass": true,
+      "failures": [],
+      "metrics": {},
+      "latency_ms": 590.3,
+      "mode": "live",
+      "usage": {},
+      "detail": "status=ok evidence=8 planner="
+    }
+  ],
+  "judge_results": null
+}

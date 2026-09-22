@@ -48,8 +48,8 @@ async def _health_payload() -> dict[str, Any]:
 
 @router.get("/health")
 async def health():
-    """运维探活；与 /api/v1/health 一样返回统一信封 {code, success, data, msg}。"""
-    return BaseResult.ok(await _health_payload())
+    """运维探活；/health 保持裸 payload，/api/v1/health 才走统一信封。"""
+    return await _health_payload()
 
 
 @router.get("/api/v1/health")

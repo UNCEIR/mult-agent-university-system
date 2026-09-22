@@ -4,7 +4,7 @@
 
 - 触发：phase-3-extensions.md §1.4 试金石第 58 行"未来承诺"——上游资源充足后必须严格跑真实端测并 eval 评估，作为 Phase 3 正式验收依据。
 - 状态：Phase 3 编码 W-A~W-F 已完成（267 passed + Next.js build 通过），但因 LLM 算力受限（`qwen3.5-flash` 余额不足），真实端测 ⏳ 项延后。
-- 上游更新：模型从 `qwen3.5-flash` 切换为 `qwen3.8-flash`（已写 `python/.env`）；Docker registry-1.docker.io 不可达，改用 `docker.m.daocloud.io/library/python:3.12-slim` 镜像源（缓存复用 5/6 层）。
+- 上游更新：模型从 `qwen3.5-flash` 切换为 `deepseek-v4.1-flash`（已写 `python/.env`）；Docker registry-1.docker.io 不可达，改用 `docker.m.daocloud.io/library/python:3.12-slim` 镜像源（缓存复用 5/6 层）。
 - 范围：用户要求"不要跑 phase3 未进行改动的功能 跑涉及调用新实装工具的功能 涉及记忆改造的功能"——故本轮仅跑：
   - `evaluation_comment_live`（直接走 Phase 3 实装的 evaluation 三 @tool + compute_weighted_grade）
   - `report_math_live`（端到端 SSE 消费 + compute_weighted_grade + mode 透传）

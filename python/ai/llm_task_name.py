@@ -36,7 +36,9 @@ class LLMTaskName(str, Enum):
     EVALUATION_DIMENSION_DESIGN = "evaluation_dimension_design"  # evaluation 维度提案
     MEMORY_EXTRACT = "memory_extract"  # chat 跨会话记忆提取（增量摘要）
     EVAL_JUDGE = "eval_judge"  # LLM-as-judge（faithfulness/answer_relevancy/rubric，Phase 4 B1）
-    VISION_ANALYZE = "vision_analyze"  # image_recognize 视觉分析（qwen3.7-plus）
+    VISION_ANALYZE = "vision_analyze"  # image_recognize 视觉分析（qwen3-vl-plus）
+    RETRIEVAL_PLANNER = "retrieval_planner"  # Agentic RAG 查询/知识库/策略规划
+    RETRIEVAL_RERANK = "retrieval_rerank"  # Agentic RAG 候选片段 listwise 筛选
 
     # ── Embedding 场景 ──────────────────────────────────────────────
     COURSE_RECALL = "course_recall"  # 在线召回/搜索（course_recall_agent + main.py 探活）

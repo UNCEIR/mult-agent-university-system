@@ -119,7 +119,7 @@ async def build_deep_agent(
             update_prompt=update_prompt,
         )
         # 第二项必须同步传子类实例（v1.2 修正），否则 nudge 中间件与子类事件脱节
-    middleware = [summarization, SummarizationToolMiddleware(summarization)]
+    middleware = [*middleware, summarization, SummarizationToolMiddleware(summarization)]
 
     logger.info(
         "build_deep_agent",

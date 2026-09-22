@@ -8,7 +8,7 @@
   3. 多模态视觉模型换型为 qwen3-vl-plus 并做真实冒烟
   4. 对全部已闭环的 skill 功能接口做端到端测试
 - 触发原因或用户诉求：用户要求"学习市面上优秀的 eval 评测规范进行更改"；"将单一 SKILL.md 扩展为 commands/rules/scripts 的解耦方案"；"对目前需要使用 skill 的功能接口且已闭环的都进行端到端测试"
-- 影响范围：`python/eval_sets/`（50 case 重构）、`python/eval/runner.py`（指标矩阵升级）、`python/skills/`（10 个 skill 模块化 + `_shared/` 共享规则）、`python/api/chat.py`（images 附件接线修复）、`python/scripts/e2e_smoke.py`（新增冒烟脚本）、`python/config/settings.py` + `.env`（vision_model=qwen3-vl-plus、LLM_MODEL=qwen3.8-flash）
+- 影响范围：`python/eval_sets/`（50 case 重构）、`python/eval/runner.py`（指标矩阵升级）、`python/skills/`（10 个 skill 模块化 + `_shared/` 共享规则）、`python/api/chat.py`（images 附件接线修复）、`python/scripts/e2e_smoke.py`（新增冒烟脚本）、`python/config/settings.py` + `.env`（vision_model=qwen3-vl-plus、LLM_MODEL=deepseek-v4.1-flash）
 
 ## 总体架构方案
 
@@ -66,7 +66,7 @@
   - `pytest tests/ -m "not slow"` = **236 passed, 4 deselected**（skills 模块化零破坏，契约测试全绿）
   - eval runner smoke：chat_intent 20/20、report_math 10/10、kb_retrieval 10/10（context_recall=1.0）、evaluation_comment 正例过反例拦
   - 视觉冒烟：容器内 image_recognize 识别需求文档截图成功（qwen3-vl-plus 多模态链路端到端）
-  - E2E 全量（qwen3.8-flash）：**9/9 通过**——chat→knowledge-query(10.5s) / recommend(148.9s) / writing(16.3s) / web-search(5.6s 降级链) / image-generation(3.7s 降级链) / image_recognize(19.8s 图片附件) / report 全链(621.5s，38 学生 PDF + token 下载 %PDF) / evaluation 全链(29.1s，生成 + /me) / documents upload(0.4s，251 chunks)
+  - E2E 全量（deepseek-v4.1-flash）：**9/9 通过**——chat→knowledge-query(10.5s) / recommend(148.9s) / writing(16.3s) / web-search(5.6s 降级链) / image-generation(3.7s 降级链) / image_recognize(19.8s 图片附件) / report 全链(621.5s，38 学生 PDF + token 下载 %PDF) / evaluation 全链(29.1s，生成 + /me) / documents upload(0.4s，251 chunks)
   - compileall 干净；docker 全服务健康
 - 未执行及原因：LLM-as-judge（faithfulness/answer_relevancy/rubric）为 Phase 4 全量项（`--judge` 接口已预留）；真实 MCP 连接（tavily/即梦/E2B）凭据未到位（E2E 中验证的是降级链行为）
 

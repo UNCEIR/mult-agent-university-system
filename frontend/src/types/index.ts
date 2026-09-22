@@ -194,7 +194,14 @@ export interface ChatToolData {
   tool: string
   status: 'start' | 'end'
   session_id: string
-  // Phase 4 E4：tool end 附 result（observe 载体）
+  tool_call_id?: string
+  run_id?: string
+  args?: Record<string, unknown>
+  ok?: boolean
+  code?: string
+  message?: string
+  retryable?: boolean
+  latency_ms?: number | null
   result?: string
 }
 
@@ -411,9 +418,19 @@ export interface SessionInfo {
   updated_at?: string
 }
 
+export interface ChatImageAttachment {
+  image_id: string
+  mime_type: string
+  width: number
+  height: number
+  file_size?: number
+  preview_url: string
+  filename?: string
+}
 export interface ChatHistoryMessage {
   seq: number
   role: string
   content: string | null
   tool_calls_json?: string | null
+  attachments_json?: string | ChatImageAttachment[] | null
 }
